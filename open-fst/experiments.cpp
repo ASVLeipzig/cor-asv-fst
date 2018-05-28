@@ -82,20 +82,20 @@ ComposeFst<StdArc> lazy_compose(
 
     const SymbolTable table = *(input1->OutputSymbols());
     StdVectorFst input_transducer = create_input_transducer(word, &table);
+    ArcSort(&input_transducer, StdOLabelCompare());
 
     input_transducer.Write(string("input_") + word + string(".fst"));
 
-    ArcSort(input1, StdOLabelCompare());
+    //ArcSort(input1, StdOLabelCompare());
     //ArcSort(input2, StdILabelCompare());
 
     ComposeFst<StdArc> delayed_result(*input1, *input2);
 
     if (input3) {
-        ArcSort(input3, StdILabelCompare());
+        //ArcSort(input3, StdILabelCompare());
         ComposeFst<StdArc> delayed_result2(delayed_result, *input3);
     }
     
-    ArcSort(&input_transducer, StdOLabelCompare());
     ComposeFst<StdArc> delayed_result2(input_transducer, (input3 ? delayed_result2 : delayed_result));
 
     return delayed_result2;
@@ -110,22 +110,21 @@ StdVectorFst eager_compose(
 
     const SymbolTable table = *(input1->OutputSymbols());
     StdVectorFst input_transducer = create_input_transducer(word, &table);
+    ArcSort(&input_transducer, StdOLabelCompare());
 
     input_transducer.Write(string("input_") + word + string(".fst"));
 
     StdVectorFst result;
 
-    ArcSort(&input_transducer, StdOLabelCompare());
-
     Compose(input_transducer, *input1, &result);
 
     if (input2) {
-        ArcSort(&result, StdOLabelCompare());
+        //ArcSort(&result, StdOLabelCompare());
         Compose(result, *input2, &result);
     }
 
     if (input3) {
-        ArcSort(&result, StdOLabelCompare());
+        //ArcSort(&result, StdOLabelCompare());
         Compose(result, *input3, &result);
     }
     
@@ -189,7 +188,6 @@ StdVectorFst compose_and_search(
 
     }
 
-
     if (getrusage(RUSAGE_SELF, &usage) < 0) {
         std::perror("cannot get usage statistics");
         // exit(1);
@@ -199,7 +197,6 @@ StdVectorFst compose_and_search(
         std::cout << "RAM usage: " << usage.ru_maxrss << endl;
     
     }
-
 
     return nbest_transducer;
 }
@@ -261,15 +258,12 @@ StdVectorFst perform_experiment(
 
 }
 
+
 int main(int argc, const char* argv[]) {
 
-    // register signal and signal handler
-
-    // signal(SIGALRM,(void (*)(int))kill_child);
+    //chrono::steady_clock::time_point begin = chrono::steady_clock::now();
 
     // read transducer files
-
-    chrono::steady_clock::time_point begin = chrono::steady_clock::now();
 
     StdVectorFst *error_model1 = StdVectorFst::Read("error_transducers/max_error_1.ofst");
     StdVectorFst *error_model2 = StdVectorFst::Read("error_transducers/max_error_2.ofst");
@@ -301,13 +295,52 @@ int main(int argc, const char* argv[]) {
     StdVectorFst *extended_lexicon_small = StdVectorFst::Read("extended_lexicon/extended_lexicon.ofst");
     StdVectorFst *rules = StdVectorFst::Read("morphology/rules.ofst");
 
-    chrono::steady_clock::time_point end = chrono::steady_clock::now();
+
+    vector<StdVectorFst*> arc_sort_required = {
+        error_model1,
+        error_model2,
+        error_model3,
+        error_model4,
+        error_model5,
+        context_error_model1,
+        context_error_model2,
+        context_error_model3,
+        context_error_model4,
+        context_error_model5,
+        context_error_model_2_1,
+        context_error_model_2_2,
+        context_error_model_2_3,
+        context_error_model_2_4,
+        context_error_model_2_5,
+        context_error_model_3_1,
+        context_error_model_3_2,
+        context_error_model_3_3,
+        context_error_model_3_4,
+        context_error_model_3_5,
+        lexicon_small,
+        lexicon_big,
+        extended_lexicon_small,
+        rules
+    };
+
+
+
+
+
+    //chrono::steady_clock::time_point end = chrono::steady_clock::now();
     //cout << "Load Transducers: " << chrono::duration_cast<chrono::microseconds>(end - begin).count() << endl;
 
-    vector<StdVectorFst*> error_models = {error_model1, error_model2, error_model3, error_model4, error_model5};
+    // error models
+
+    vector<StdVectorFst*> error_models_123 = {error_model1, error_model2, error_model3, error_model4, error_model5};
+
     vector<StdVectorFst*> context_error_models_23 = {context_error_model1, context_error_model2, context_error_model3, context_error_model4, context_error_model5};
+
     vector<StdVectorFst*> context_error_models_2 = {context_error_model_2_1, context_error_model_2_2, context_error_model_2_3, context_error_model_2_4, context_error_model_2_5};
+
     vector<StdVectorFst*> context_error_models_3 = {context_error_model_3_1, context_error_model_3_2, context_error_model_3_3, context_error_model_3_4, context_error_model_3_5};
+
+
     // parameters for experiments
 
     int num_errors = 1;
@@ -344,6 +377,8 @@ int main(int argc, const char* argv[]) {
 
     // select error models
 
+    vector<StdVectorFst*> error_models;
+
     switch (context) {
         case 23 :
             error_models = context_error_models_23;
@@ -353,6 +388,7 @@ int main(int argc, const char* argv[]) {
         case 3 :
             error_models = context_error_models_3;
         default : 
+            error_models = error_models_123;
             break;
     }
     
@@ -391,8 +427,19 @@ int main(int argc, const char* argv[]) {
     //error_model->SetOutputSymbols(&lexicon_new);
     //error_model->SetInputSymbols(&lexicon_new);
 
+    
+    // perfom arc sort
 
-    // use morphology?
+    for (int i = 0; i < std::end(arc_sort_required) - std::begin(arc_sort_required); i++) {
+
+        ArcSort(arc_sort_required[i], StdOLabelCompare());
+        ArcSort(arc_sort_required[i], StdILabelCompare());
+
+    }
+
+
+
+    // use morphology
     if (!use_morphology) {
         rules = NULL;
     }
@@ -427,7 +474,7 @@ int main(int argc, const char* argv[]) {
 
                 cout << "Lazy: " << lazy << endl;
                 cout << "Morphology: " << use_morphology << endl;
-                cout << "Asse Lexicon: " << big_lexicon << endl;
+                cout << "Lexicon: " << big_lexicon << endl;
 
                 if ((child_pid = fork()) < 0) {
                 
