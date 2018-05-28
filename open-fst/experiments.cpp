@@ -18,6 +18,11 @@
 #include <sys/wait.h>
 #include <cerrno>
 
+//#include <cunistd>
+#include <sys/time.h>
+#include <sys/resource.h>
+#include <ctime>
+
 
 //g++ -std=c++14 -I /usr/local/include -ldl -lfst -lpthread experiments.cpp -o experiments
 
@@ -28,6 +33,8 @@ using namespace std;
 
 pid_t child_pid;
 int status;
+
+struct rusage usage;
 
 
 void kill_child(int sig) {
@@ -126,6 +133,21 @@ StdVectorFst eager_compose(
 }
 
 
+float get_cpu_time() {
+
+    if (getrusage(RUSAGE_SELF, &usage) < 0) {
+        std::perror("cannot get usage statistics");
+        // exit(1);
+        return -1;
+    } else {
+    
+        return usage.ru_utime.tv_sec + usage.ru_stime.tv_sec +
+            1e-6*usage.ru_utime.tv_usec + 1e-6*usage.ru_stime.tv_usec;
+    
+    }
+}
+
+
 StdVectorFst compose_and_search(
     StdVectorFst *input1,
     StdVectorFst *input2,
@@ -136,42 +158,48 @@ StdVectorFst compose_and_search(
 
     StdVectorFst nbest_transducer;
 
-    chrono::steady_clock::time_point begin;
-    chrono::steady_clock::time_point end;
-
     if (lazy) {
-
-        begin = std::chrono::steady_clock::now();
 
         ComposeFst<StdArc> composed = lazy_compose(input1, input2, input3, word);
 
-        end = std::chrono::steady_clock::now();
-        cout << "Composition: " << chrono::duration_cast<chrono::microseconds>(end - begin).count() << endl;
-
-        begin = std::chrono::steady_clock::now();
+        float compose_time = get_cpu_time();
+        cout << "Composition: " << compose_time << endl;
 
         ShortestPath(composed, &nbest_transducer, nbest);
 
-        end = std::chrono::steady_clock::now();
-        cout << "Search: " << chrono::duration_cast<chrono::microseconds>(end - begin).count() << endl;
+        float total_time = get_cpu_time();
+        float search_time = total_time - compose_time;
+        cout << "Search: " << search_time << endl;
+        cout << "Total time: " << total_time << endl;
+
     }
     else {
 
-        begin = std::chrono::steady_clock::now();
-
         StdVectorFst composed = eager_compose(input1, input2, input3, word);
 
-        end = std::chrono::steady_clock::now();
-        cout << "Composition: " << chrono::duration_cast<chrono::microseconds>(end - begin).count() << endl;
-
-
-        begin = std::chrono::steady_clock::now();
+        float compose_time = get_cpu_time();
+        cout << "Composition: " << compose_time << endl;
 
         ShortestPath(composed, &nbest_transducer, nbest);
 
-        end = std::chrono::steady_clock::now();
-        cout << "Search: " << chrono::duration_cast<chrono::microseconds>(end - begin).count() << endl;
+        float total_time = get_cpu_time();
+        float search_time = total_time - compose_time;
+        cout << "Search: " << search_time << endl;
+        cout << "Total time: " << total_time << endl;
+
     }
+
+
+    if (getrusage(RUSAGE_SELF, &usage) < 0) {
+        std::perror("cannot get usage statistics");
+        // exit(1);
+    } else {
+    
+        // maximum resident set size in kB
+        std::cout << "RAM usage: " << usage.ru_maxrss << endl;
+    
+    }
+
 
     return nbest_transducer;
 }
@@ -300,6 +328,8 @@ int main(int argc, const char* argv[]) {
     vector<string> input_words = {"bIeibt", "zuständigen", "miüssen", "radioalctiver",
         "schiefßen", "niedersBchsischen"};
 
+    // select lexicon
+
     StdVectorFst *lexicon;
     if (big_lexicon) {
         lexicon = lexicon_big;
@@ -311,6 +341,8 @@ int main(int argc, const char* argv[]) {
     if (extended_lexicon and !big_lexicon) {
         lexicon = extended_lexicon_small;
     }
+
+    // select error models
 
     switch (context) {
         case 23 :
@@ -424,7 +456,6 @@ int main(int argc, const char* argv[]) {
                  }
                  else {
                 
-                    //std::cout << "waiting for child " << i << endl;
                     if (wait(&status) < 0) {
                 
                         std::perror("wait() failed");
@@ -443,7 +474,6 @@ int main(int argc, const char* argv[]) {
                     cout << endl;
                 
                 }
-                //}
 
             }
         }
