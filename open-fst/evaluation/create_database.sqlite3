@@ -1,0 +1,1 @@
+CREATE TABLE "performance" ( `word` TEXT, `num_errors` INTEGER, `nbest` INTEGER, `lazy` INTEGER, `lexicon` TEXT, `morphology` INTEGER, `composition_time` REAL, `search_time` REAL, `total_time` REAL, `timeout` INTEGER, `num_states` INTEGER, `extended_lexicon` INTEGER, `context` INTEGER, `ram_usage` INTEGER )
