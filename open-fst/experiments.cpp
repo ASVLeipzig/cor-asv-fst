@@ -33,6 +33,15 @@ using namespace fst;
 using namespace std;
 
 
+typedef StdArc A;
+typedef A::StateId S;
+typedef A::Weight W;
+typedef Matcher< Fst<A> > M;
+typedef SequenceComposeFilter<M> F;
+typedef GenericComposeStateTable<A, F::FilterState> T;
+typedef ComposeFstOptions<A, M, F, T> COpts;
+
+
 pid_t child_pid;
 int status;
 
@@ -91,14 +100,6 @@ ComposeFst<StdArc> lazy_compose(
     //ArcSort(input1, StdOLabelCompare());
     //ArcSort(input2, StdILabelCompare());
 
-
-    typedef StdArc A;
-    typedef A::StateId S;
-    typedef A::Weight W;
-    typedef Matcher< Fst<A> > M;
-    typedef SequenceComposeFilter<M> F;
-    typedef GenericComposeStateTable<A, F::FilterState> T;
-    typedef ComposeFstOptions<A, M, F, T> COpts;
 
     COpts* opts = new COpts();
 
@@ -188,12 +189,14 @@ StdVectorFst compose_and_search(
 
         std::vector<StdArc::Weight> distance;
         AnyArcFilter<StdArc> arc_filter;
-        AutoQueue<StdArc::StateId> state_queue(composed, &distance, arc_filter);
-        //ShortestFirstQueue<StdArc::StateId> state_queue(composed, &distance, arc_filter);
-        const ShortestPathOptions<StdArc, AutoQueue<StdArc::StateId>, AnyArcFilter<StdArc>> opts(
-        &state_queue, arc_filter, nshortest, unique, false, kDelta, first_path,
-        weight_threshold, state_threshold);
+        //AutoQueue<StdArc::StateId> state_queue(composed, &distance, arc_filter);
+        NaturalShortestFirstQueue<StdArc::StateId, StdArc::Weight>* state_queue =
+            new NaturalShortestFirstQueue<StdArc::StateId, StdArc::Weight>(distance);
 
+        //const ShortestPathOptions<StdArc, AutoQueue<StdArc::StateId>, AnyArcFilter<StdArc>> opts(
+
+        const ShortestPathOptions<StdArc, NaturalShortestFirstQueue<StdArc::StateId, StdArc::Weight>, AnyArcFilter<StdArc>>
+            opts(state_queue, arc_filter, nshortest, unique, false, kDelta, first_path, weight_threshold, state_threshold);
 
         //ShortestPath(composed, &nbest_transducer, nbest);
 
