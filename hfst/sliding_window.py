@@ -4,7 +4,7 @@ import libhfst
 import error_transducer as et
 
 
-def merge_word_borders(basic_fst):
+def get_path_dicts(basic_fst):
 
     initial_state = 0
 
@@ -46,6 +46,53 @@ def merge_word_borders(basic_fst):
                 predecessor_dict[target] = actual_state
                 transition_dict[target] = transition
                 queue.append(target)
+
+    return path_dict, output_dict, transition_dict, predecessor_dict
+
+
+
+def merge_word_borders(basic_fst, path_dict, predecessor_dict):
+
+    #initial_state = 0
+
+    #path_dict = {}          # input string leading to state
+    #output_dict = {}        # output string leading to state
+    #transition_dict = {}    # transition leading to state
+    #predecessor_dict = {}   # predecessor state of state
+
+    #states = basic_fst.states()
+    #num_states = len(states)
+    #visited = []
+    #queue = [initial_state]
+
+    #while len(visited) < num_states:
+
+    #    actual_state = queue.pop()
+    #    visited.append(actual_state)
+
+    #    # set string leading to actual_state
+    #    if len(visited) > 1:
+    #        predecessor = predecessor_dict[actual_state]
+    #        input_symbol = transition_dict[actual_state].get_input_symbol()
+    #        if input_symbol == hfst.EPSILON:
+    #            input_symbol = ''
+    #        path_dict[actual_state] = path_dict[predecessor] + input_symbol
+    #        output_symbol = transition_dict[actual_state].get_output_symbol()
+    #        if output_symbol == hfst.EPSILON:
+    #            output_symbol = ''
+    #        output_dict[actual_state] = output_dict[predecessor] + output_symbol
+    #    else:
+    #        path_dict[actual_state] = ''
+    #        output_dict[actual_state] = ''
+
+    #    # add new states to queue
+    #    transitions = basic_fst.transitions(actual_state)
+    #    for transition in transitions:
+    #        target = transition.get_target_state()
+    #        if target not in visited and target not in queue:
+    #            predecessor_dict[target] = actual_state
+    #            transition_dict[target] = transition
+    #            queue.append(target)
 
    # find states with space as input symbol and output_symbol
     input_space_states = []
@@ -106,7 +153,7 @@ def merge_word_borders(basic_fst):
                 if not transition2_exists:
                     basic_fst.add_transition(state2, state1, hfst.EPSILON, hfst.EPSILON, 0.0)
 
-    return output_dict, path_dict
+    #return output_dict, path_dict
 
 
 def create_input_transducer(input_str):
@@ -217,14 +264,16 @@ def combine_results(result_list, window_size):
 
     starting_fst = result_list[0].copy()
     result_fst = hfst.HfstBasicTransducer(starting_fst)
-    output_dict, path_dict = merge_word_borders(result_fst)
+
+    path_dict, output_dict, transition_dict, predecessor_dict = get_path_dicts(result_fst)
+    merge_word_borders(result_fst, path_dict, predecessor_dict)
 
     for i, fst in enumerate(result_list[1:]):
 
         print(i)
 
         partial_fst = hfst.HfstBasicTransducer(fst)
-        merge_word_borders(partial_fst)
+        #merge_word_borders(partial_fst)
 
         #  remove final states in result fst
         for state, arcs in enumerate(result_fst):
@@ -257,7 +306,12 @@ def combine_results(result_list, window_size):
         #result_fst.n_best(100)
 
         result_fst = hfst.HfstBasicTransducer(result_fst)
-        output_dict, path_dict = merge_word_borders(result_fst)
+
+
+        path_dict, output_dict, transition_dict, predecessor_dict = get_path_dicts(result_fst)
+        merge_word_borders(result_fst, path_dict, predecessor_dict)
+
+        #output_dict, path_dict = merge_word_borders(result_fst)
 
     return result_fst
 
@@ -267,13 +321,13 @@ def main():
     #input_str = "bIeibt"
     #input_str = "{CAP}unterlagen"
     #input_str = "fur"
-    #input_str = "das miüssenwirklich seHr sclnöne bla ue sein"
-    input_str = "Das miüssenwirklich seHr sclnöne bla ue sein"
+    input_str = "das miüssenwirklich seHr sclnöne bla ue sein"
+    #input_str = "Das miüssenwirklich seHr sclnöne bla ue sein"
     #input_str = "sclnöne bla ue sein"
 
-    window_size = 2
+    window_size = 3
     result_num = 10
-    words_per_window = 3
+    words_per_window = 4
 
     # create transducers
 
