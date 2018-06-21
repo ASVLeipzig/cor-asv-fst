@@ -51,7 +51,7 @@ def merge_word_borders(basic_fst):
     input_space_states = []
     for state, transitions in enumerate(basic_fst):
         for transition in transitions:
-            if transition.get_input_symbol() == ' ' and transition.get_output_symbol == ' ':
+            if transition.get_input_symbol() == ' ' and transition.get_output_symbol() == ' ':
             #if transition.get_input_symbol() == ' ':
                 input_space_states.append(transition.get_target_state())
 
@@ -64,24 +64,46 @@ def merge_word_borders(basic_fst):
         #    print("ALARM")
         merge_candidates.append(predecessor)
 
+    # add states without transitions/successors to merge candidates
+    for state in basic_fst.states():
+        if basic_fst.transitions(state) == ():
+            #print('added state ', state, ' to merge candidates')
+            merge_candidates.append(state)
+
+    #print("merge candidates: ", merge_candidates)
+
     # find pairs of corresponding states and merge
     ## compare candidates with all other states, because new last states do
     ## not end with a space character, but with a word
+    # compare with other merge_candidates, because new last states are
+    # handled by adding states without outgoing transitions
     for i, state1 in enumerate(merge_candidates):
         for state2 in merge_candidates[i:]:
         #for state2 in basic_fst.states():
             if path_dict[state1] == path_dict[state2]:
-                transition_exists = False
+                #print("corresponding input string ", path_dict[state1])
+                #print("output_string1 ", output_dict[state1])
+                #print("output_string2 ", output_dict[state2])
+                transition1_exists = False
+                transition2_exists = False
 
                 for transition in basic_fst.transitions(state1):
                     if transition.get_target_state() == state2 \
                     and transition.get_input_symbol() == hfst.EPSILON \
                     and transition.get_output_symbol() == hfst.EPSILON:
-                        transition_exists = True
+                        transition1_exists = True
 
-                if not transition_exists:
+                for transition in basic_fst.transitions(state2):
+                    if transition.get_target_state() == state1 \
+                    and transition.get_input_symbol() == hfst.EPSILON \
+                    and transition.get_output_symbol() == hfst.EPSILON:
+                        transition2_exists = True
+
+                if not transition1_exists:
                     #print("found corresponding states with path ", path_dict[state1])
                     basic_fst.add_transition(state1, state2, hfst.EPSILON, hfst.EPSILON, 0.0)
+
+                if not transition2_exists:
                     basic_fst.add_transition(state2, state1, hfst.EPSILON, hfst.EPSILON, 0.0)
 
     return output_dict, path_dict
@@ -288,16 +310,19 @@ def main():
     complete_output = hfst.HfstTransducer(combine_results(output_list, window_size))
     #complete_paths = hfst.HfstTransducer(complete_output).extract_paths(max_number=result_num, max_cycles=0)
 
-    complete_output.n_best(result_num)
-    print_output_paths(complete_output)
+    #complete_output.n_best(result_num)
+    complete_output.n_best(200)
+    #print_output_paths(complete_output)
 
     #complete_paths = hfst.HfstTransducer(complete_output).extract_shortest_paths()
 
+    complete_paths = hfst.HfstTransducer(complete_output).extract_paths(max_number=result_num, max_cycles=0)
 
-    #for input, outputs in complete_paths.items():
-    #    print('%s:' % input)
-    #    for output in outputs:
-    #        print(' %s\t%f' % (output[0].replace('@_EPSILON_SYMBOL_@', ''), output[1]))
+
+    for input, outputs in complete_paths.items():
+        print('%s:' % input)
+        for output in outputs:
+            print(' %s\t%f' % (output[0].replace('@_EPSILON_SYMBOL_@', ''), output[1]))
 
 
 if __name__ == '__main__':
