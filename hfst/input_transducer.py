@@ -19,10 +19,16 @@ def main():
     #input_str = "bIeibt"
     #input_str = "{CAP}unterlagen"
     #input_str = "fur"
+    input_str = "miüssen"
 
     error_transducer_1 = et.load_transducer('error_transducer_1.hfst')
     error_transducer_2 = et.load_transducer('error_transducer_2.hfst')
     error_transducer_3 = et.load_transducer('error_transducer_3.hfst')
+
+    #error_numbers = [1, 2, 3, 4, 5]
+    error_numbers = [3]
+    contexts = ['1', '2', '3', '123', '23']
+
 
     # allow one error
 
@@ -35,83 +41,90 @@ def main():
     #acceptor.remove_epsilons()
     #acceptor.minimize()
 
-    error_transducer = error_transducer_1.copy()
-    error_transducer.disjunct(error_transducer_2)
-    error_transducer.disjunct(error_transducer_3)
+    for context in contexts:
 
-    #print(error_transducer)
+        error_transducer = hfst.HfstTransducer()
 
-    one_error = acceptor.copy()
-    one_error.concatenate(error_transducer)
-    #one_error.concatenate(acceptor)
-    one_error.optionalize()
+        if '1' in context:
+            error_transducer.disjunct(error_transducer_1)
+        if '2' in context:
+            error_transducer.disjunct(error_transducer_2)
+        if '3' in context:
+            error_transducer.disjunct(error_transducer_3)
 
-    #print(one_error)
+        #print(error_transducer)
 
-    error_number = 3
-    print('Number of errors:', error_number)
+        one_error = acceptor.copy()
+        one_error.concatenate(error_transducer)
+        #one_error.concatenate(acceptor)
+        one_error.optionalize()
 
-    one_error.repeat_n(error_number)
+        #print(one_error)
 
-    #one_error.minimize()
+        for error_number in error_numbers:
+            print('Number of errors:', error_number)
 
-    ## allow two errors
+            one_error.repeat_n(error_number)
 
-    #two_errors = one_error.copy()
-    #two_errors.concatenate(error_transducer)
-    #two_errors.concatenate(acceptor)
+            #one_error.minimize()
 
-    ## allow three errors
+            ## allow two errors
 
-    #three_errors = two_errors.copy()
-    #three_errors.concatenate(error_transducer)
-    #three_errors.concatenate(acceptor)
+            #two_errors = one_error.copy()
+            #two_errors.concatenate(error_transducer)
+            #two_errors.concatenate(acceptor)
 
-    error_transducer = one_error
-    error_transducer.concatenate(acceptor)
+            ## allow three errors
 
-    et.save_transducer('max_error_' + str(error_number) + '.htsf', error_transducer)
+            #three_errors = two_errors.copy()
+            #three_errors.concatenate(error_transducer)
+            #three_errors.concatenate(acceptor)
 
-    # compose input, error model, and lexicon
+            error_transducer = one_error
+            error_transducer.concatenate(acceptor)
 
-    input_fst = create_input_transducer(input_str)
+            et.save_transducer('max_error_' + str(error_number) + '_context_'+ str(context) + '.hfst', error_transducer)
 
-    input_fst.compose(error_transducer)
-    #input_fst.output_project()
-    #input_fst.remove_epsilons()
+    ## compose input, error model, and lexicon
 
-    #lexicon_transducer = et.load_transducer('fst/lexicon.fsm')
-    #morphology_transducer = et.load_transducer('fst/rules.fsm')
+    #input_fst = create_input_transducer(input_str)
 
-    lexicon_transducer = et.load_transducer('wwm/extended_lexicon_inverted_projected.tropical')
+    #input_fst.compose(error_transducer)
+    ##input_fst.output_project()
+    ##input_fst.remove_epsilons()
 
-    input_fst.compose(lexicon_transducer)
+    ##lexicon_transducer = et.load_transducer('fst/lexicon.fsm')
+    ##morphology_transducer = et.load_transducer('fst/rules.fsm')
 
-    result_num = 100
+    #lexicon_transducer = et.load_transducer('wwm/extended_lexicon_inverted_projected.tropical')
 
-    input_fst.n_best(result_num)
-    #results = input_fst.extract_paths(max_cycles=0, max_number=5, output='dict')
+    #input_fst.compose(lexicon_transducer)
 
-    results = input_fst.extract_paths(max_number=result_num)
+    #result_num = 100
 
-    #except libhfst.TransducerIsCyclicException as e:
+    #input_fst.n_best(result_num)
+    ##results = input_fst.extract_paths(max_cycles=0, max_number=5, output='dict')
 
-    #    print('failed')
-    #    exit(1)
+    #results = input_fst.extract_paths(max_number=result_num)
 
-    for input, outputs in results.items():
-        print('%s:' % input)
-        for output in outputs:
-            print(' %s\t%f' % (output[0].replace('@_EPSILON_SYMBOL_@', ''), output[1]))
+    ##except libhfst.TransducerIsCyclicException as e:
 
-
-
-    #results = input_fst.extract_paths(output='dict')
+    ##    print('failed')
+    ##    exit(1)
 
     #for input, outputs in results.items():
     #    print('%s:' % input)
     #    for output in outputs:
-    #        print(' %s\t%f' % (output[0], output[1]))
+    #        print(' %s\t%f' % (output[0].replace('@_EPSILON_SYMBOL_@', ''), output[1]))
+
+
+
+    ##results = input_fst.extract_paths(output='dict')
+
+    ##for input, outputs in results.items():
+    ##    print('%s:' % input)
+    ##    for output in outputs:
+    ##        print(' %s\t%f' % (output[0], output[1]))
 
 
 if __name__ == '__main__':

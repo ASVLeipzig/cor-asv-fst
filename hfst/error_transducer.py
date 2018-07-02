@@ -2,7 +2,8 @@ import hfst
 import math
 import functools
 
-import error_model2 as error_model
+#import error_model2 as error_model
+import process_dta_data as dta
 
 
 def preprocess_confusion_dict(confusion_dict):
@@ -123,21 +124,40 @@ def load_transducer(filename):
 
 def main():
 
+    #confusion_dicts = error_model.get_confusion_dicts()
+
+
+    path = '../dta19-reduced/traindata/'
+
+    gt_dict = dta.create_dict(path, 'gt')
+
+    #frak3_dict = create_dict(path, 'deu-frak3')
+    fraktur4_dict = dta.create_dict(path, 'Fraktur4')
+    #foo4_dict = create_dict(path, 'foo4')
+
+    confusion_dicts = dta.get_confusion_dict(gt_dict, fraktur4_dict)
+
+
+
+
     n = 3
 
-    confusion_dicts = error_model.get_confusion_dicts()
-    confusion_list = preprocess_confusion_dict(confusion_dicts[n])
-    write_frequency_list(confusion_list, 'confusion.txt')
-    confusion_list = read_frequency_list('confusion.txt')
-    error_transducer = transducer_from_list(confusion_list)
-    optimize_error_transducer(error_transducer)
+    for n in [1,2,3]:
 
-    #print(confusion_list)
+        print('n: ', str(n))
 
-    save_transducer('error_transducer_' + str(n) + '.hfst', error_transducer)
-    error_transducer = load_transducer('error_transducer_' + str(n) + '.hfst')
+        confusion_list = preprocess_confusion_dict(confusion_dicts[n])
+        write_frequency_list(confusion_list, 'confusion.txt')
+        confusion_list = read_frequency_list('confusion.txt')
+        error_transducer = transducer_from_list(confusion_list)
+        optimize_error_transducer(error_transducer)
 
-    print(error_transducer)
+        #print(confusion_list)
+
+        save_transducer('error_transducer_' + str(n) + '.hfst', error_transducer)
+        #error_transducer = load_transducer('error_transducer_' + str(n) + '.hfst')
+
+        #print(error_transducer)
 
 
 if __name__ == '__main__':
