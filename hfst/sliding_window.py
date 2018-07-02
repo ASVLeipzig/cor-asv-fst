@@ -20,6 +20,7 @@ def get_path_dicts(basic_fst):
 
     while len(visited) < num_states:
 
+        # TODO: hier darf nicht von einer leere Queue gepopt werden
         actual_state = queue.pop()
         visited.append(actual_state)
 
@@ -247,7 +248,7 @@ def get_append_states(basic_fst, window_size, path_dict, output_dict):
 
     print('APPEND STATES: ', append_states)
 
-    return append_states
+    return append_states, append_state_candidates
 
 
 def print_output_paths(basic_fst):
@@ -281,9 +282,17 @@ def combine_results(result_list, window_size):
                 result_fst.remove_final_weight(state)
 
         # determine append states and set them final
-        append_states = get_append_states(result_fst, window_size, path_dict, output_dict)
+        append_states, append_state_candidates = get_append_states(result_fst, window_size, path_dict, output_dict)
         for state in append_states:
             result_fst.set_final_weight(state, 0.0)
+
+        # if no word borders exist where result can be appended, append in
+        # the middle of a word with a high weight
+        if append_states == []:
+            print("APPEND STATES EMPTY")
+
+            for state in append_state_candidates:
+                result_fst.set_final_weight(state, 100.0)
 
 
         print('BEFORE CONCATENATION RESULT PATHS')
@@ -343,9 +352,10 @@ def main():
     #input_str = "fur"
     #input_str = "das miüssenwirklich seHr sclnöne bla ue Schuhe seln"
     #input_str = "Das miüssenwirklich seHr sclnöne bla ue sein"
+    input_str = "miü ssen miü ssen wirklich"# seHr sclnöne bla ue Schuhe seln"
     #input_str = "sclnöne bla ue sein"
     #input_str = "Philoſophen von Fndicn dur<h Gricchenland bis"
-    input_str = "Philoſophenvon Fndicn dur<h Gricche nland bls"
+    #input_str = "Philoſophenvon Fndicn dur<h Gricche nland bls"
     #input_str = "wirrt ſah fie um ſh, und als fie den Mann mit dem"
 
     #window_size = 2
@@ -354,15 +364,15 @@ def main():
 
     # create transducers
 
-    #error_transducer = et.load_transducer('transducers/max_error_3.hfst')
+    error_transducer = et.load_transducer('transducers/max_error_3.hfst')
     #error_transducer = et.load_transducer('transducers/max_error_3_context_123_dta.htsf')
-    error_transducer = et.load_transducer('transducers/max_error_3_context_23_dta.htsf')
+    #error_transducer = et.load_transducer('transducers/max_error_3_context_23_dta.htsf')
 
     punctuation_transducer = et.load_transducer('transducers/punctuation_transducer_dta.hfst')
     punctuation_transducer.optionalize()
 
-    #lexicon_transducer = et.load_transducer('transducers/lexicon.hfst')
-    lexicon_transducer = et.load_transducer('transducers/lexicon_transducer_dta.hfst')
+    lexicon_transducer = et.load_transducer('transducers/lexicon.hfst')
+    #lexicon_transducer = et.load_transducer('transducers/lexicon_transducer_dta.hfst')
     #lexicon_transducer = et.load_transducer('transducers/lexicon_transducer_asse.hfst')
     lexicon_transducer.concatenate(punctuation_transducer)
     space_transducer = hfst.regex('% :% ')
@@ -402,24 +412,25 @@ def main():
 
 
 
-    #complete_output = create_result_transducer(input_str, 2, 3, error_transducer, lexicon_transducer, result_num)
 
 
-    # create results transducers for window sizes 1 and 2, disjunct and
-    # merge states
+    #create results transducers for window sizes 1 and 2, disjunct and
+    #merge states
 
     window_2 = create_result_transducer(input_str, 2, 3, error_transducer, lexicon_transducer, result_num)
-    window_1 = create_result_transducer(input_str, 1, 3, error_transducer, lexicon_transducer, result_num)
+    #window_1 = create_result_transducer(input_str, 1, 3, error_transducer, lexicon_transducer, result_num)
 
-    window_2.disjunct(window_1)
+    #window_2.disjunct(window_1)
 
 
-    complete_output_basic = hfst.HfstBasicTransducer(window_2)
+    #complete_output_basic = hfst.HfstBasicTransducer(window_2)
 
-    path_dict, output_dict, transition_dict, predecessor_dict = get_path_dicts(complete_output_basic)
-    merge_word_borders(complete_output_basic, path_dict, predecessor_dict)
+    #path_dict, output_dict, transition_dict, predecessor_dict = get_path_dicts(complete_output_basic)
+    #merge_word_borders(complete_output_basic, path_dict, predecessor_dict)
 
-    complete_output = hfst.HfstTransducer(complete_output_basic)
+    #complete_output = hfst.HfstTransducer(complete_output_basic)
+
+    complete_output = window_2
 
 
     #complete_output.n_best(result_num)
