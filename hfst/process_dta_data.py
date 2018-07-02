@@ -8,6 +8,8 @@ alignment.sequence.GAP_ELEMENT = "ε"
 from alignment.vocabulary import Vocabulary
 from alignment.sequencealigner import SimpleScoring, GlobalSequenceAligner
 
+from functools import reduce
+
 import spacy
 
 import math
@@ -30,8 +32,8 @@ def get_confusion_dict(gt_dict, raw_dict):
 
     confusion_dict = [{}, {}, {}, {}]
 
-    for (gt_line, raw_line) in difference_list:
-    #for (gt_line, raw_line) in difference_list[1:100]:
+    #for (gt_line, raw_line) in difference_list:
+    for (gt_line, raw_line) in difference_list[1:100]:
 
         #print(gt_line)
         #print(raw_line)
@@ -117,8 +119,8 @@ def create_lexicon(line_dict, nlp):
 
     lines = list(line_dict.values())
 
-    #for line in lines[0:100]:
-    for line in lines:
+    for line in lines[0:100]:
+    #for line in lines:
 
         doc = nlp(line)
 
@@ -130,12 +132,15 @@ def create_lexicon(line_dict, nlp):
             if len(text) > 1 and text[-1] == '—':
                 text = text[0:-1]
 
-            if token.pos_ == 'PUNCT':
+            # punctuation marks must not contain letters or numbers
+            if token.pos_ == 'PUNCT' and \
+                reduce(lambda x,y: x or y, list(map(lambda x: x.isalpha() or x.isnumeric, text)), False):
+
                 #print('PUNCT')
                 #print(text)
                 punctation_dict[text] = punctation_dict.setdefault(text, 0) + 1
-            else:
 
+            else:
                 #print(text)
                 lexicon_dict[text] = lexicon_dict.setdefault(text, 0) + 1
                 if token.text[0].isupper:
