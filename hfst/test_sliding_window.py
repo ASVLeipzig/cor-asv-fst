@@ -43,5 +43,5 @@ def test_single_word():
 
 def test_page_number():
     input_str = '– 213 –'
-    assert get_best_result(input_str) == '– 213 –'
+    assert get_best_result(input_str) == '– 213 – '
 

@@ -107,33 +107,37 @@ def create_lexicon(line_dict, nlp):
     """Create lexicon with frequencies from dict of lines. Words and punctation marks
     are inserted into separate dicts."""
     # TODO: Bindestriche behandeln. Momentan werden sie abgetrennt vor dem
-    # Hinzufügen zum Lexikon
+    # Hinzufügen zum Lexikon. Man müsste halbe Worte weglassen und
+    # zusammengesetzte Zeilen für die Erstellung des Lexikons nutzen.
     # TODO: Groß-/Kleinschreibung wie behandeln? Momentan wird jedes
-    # großgeschriebene Wort auch in der kleingeschriebenen Variante
-    # zum Lexikon hinzugefügt. Das macht die Berechnung der relativen
-    # Häufigkeit unpräzise, da Substantive dadurch mehr
-    # Wahrscheinlichkeitsmasse bekommen.
+    # Wort in der kleingeschriebenen und der großgeschriebene Variante
+    # zum Lexikon hinzugefügt. Später vermutlich eher durch sowas wie
+    # {CAP}.
 
     lexicon_dict = {}
     punctation_dict = {}
 
     lines = list(line_dict.values())
 
-    for line in lines[0:100]:
-    #for line in lines:
+    #for line in lines[0:100]:
+    for line in lines:
 
+        # tokenize line
         doc = nlp(line)
 
         for token in doc:
             #print(token.text, '\t', token.lemma_, '\t', token.pos_,
             #token.tag_, token.dep_, token.shape_, token.is_alpha, token.is_stop)
 
+            # if word ends with hyphen, add hyphen as a punctuation mark
             text = token.text.strip()
             if len(text) > 1 and text[-1] == '—':
                 text = text[0:-1]
+                punctation_dict['—'] = punctation_dict.setdefault('—', 0) + 1
 
             # punctuation marks must not contain letters or numbers
-            if token.pos_ == 'PUNCT' and \
+            # hyphens in the middle of the text are treated as words
+            if token.pos_ == 'PUNCT' and text != '—' and \
                 reduce(lambda x,y: x or y, list(map(lambda x: x.isalpha() or x.isnumeric, text)), False):
 
                 #print('PUNCT')
@@ -141,12 +145,22 @@ def create_lexicon(line_dict, nlp):
                 punctation_dict[text] = punctation_dict.setdefault(text, 0) + 1
 
             else:
-                #print(text)
-                lexicon_dict[text] = lexicon_dict.setdefault(text, 0) + 1
-                if token.text[0].isupper:
-                    #print(text.lower())
-                    lexicon_dict[text.lower()] = lexicon_dict.setdefault(text.lower(), 0) + 1
 
+                # numbers are normalized to 1 to be replaced by a number
+                # transducer later, but the length of a number is preserved
+                if text.isdigit():
+                    text = len(text) * '1'
+                    lexicon_dict[text] = lexicon_dict.setdefault(text, 0) + 1
+
+                else:
+
+                    # add a word both uppercase and lowercase
+                    lexicon_dict[text] = lexicon_dict.setdefault(text, 0) + 1
+                    if token.text[0].isupper():
+                        #print(text.lower())
+                        lexicon_dict[text.lower()] = lexicon_dict.setdefault(text.lower(), 0) + 1
+                    else:
+                        lexicon_dict[text[0].upper() + text[1:]] = lexicon_dict.setdefault(text[0].upper() + text[1:], 0) + 1
 
     return lexicon_dict, punctation_dict
 
@@ -180,14 +194,13 @@ def main():
 
     gt_dict = create_dict(path, 'gt')
 
-    #frak3_dict = create_dict(path, 'deu-frak3')
-    fraktur4_dict = create_dict(path, 'Fraktur4')
-    #foo4_dict = create_dict(path, 'foo4')
+    ##frak3_dict = create_dict(path, 'deu-frak3')
+    #fraktur4_dict = create_dict(path, 'Fraktur4')
+    ##foo4_dict = create_dict(path, 'foo4')
 
-    confusion_dict = get_confusion_dict(gt_dict, fraktur4_dict)
+    #confusion_dict = get_confusion_dict(gt_dict, fraktur4_dict)
 
     nlp = spacy.load('de')
-
     lexicon_dict, punctation_dict = create_lexicon(gt_dict, nlp)
 
     #line_id = '05110'
@@ -202,17 +215,17 @@ def main():
     for entry in lexicon_dict.items():
         print(entry)
 
-    print(lexicon_dict['der'])
-    print(punctation_dict[','])
+    #print(lexicon_dict['der'])
+    #print(punctation_dict[','])
 
     lexicon_dict = convert_to_relative_freq(lexicon_dict)
     punctation_dict = convert_to_relative_freq(punctation_dict)
 
-    print(lexicon_dict['der'])
-    print(punctation_dict[','])
+    #print(lexicon_dict['der'])
+    #print(punctation_dict[','])
 
     write_lexicon(lexicon_dict, 'dta_lexicon.txt')
-    write_lexicon(punctation_dict, 'dta_punctation.txt')
+    write_lexicon(punctation_dict, 'dta_punctuation.txt')
 
 
 if __name__ == '__main__':

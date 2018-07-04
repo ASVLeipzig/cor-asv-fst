@@ -50,6 +50,11 @@ def optimize_error_transducer(error_transducer):
 #    ostr.close()
 
 
+def get_digit_tuples():
+
+    return (('0', '0'), ('1', '1'), ('2', '2'), ('3', '3'), ('4', '4'), ('5', '5'),\
+        ('6', '6'), ('7', '7'), ('8', '8'), ('9', '9'))
+
 
 def main():
 
@@ -62,8 +67,9 @@ def main():
     print("Construct Lexicon Transducer...")
 
     lexicon_transducer = transducer_from_list(freq_list)
+    lexicon_transducer.substitute(('1', '1'), get_digit_tuples())
 
-    lexicon_transducer = hfst.HfstTransducer(lexixon_transducer)
+    lexicon_transducer = hfst.HfstTransducer(lexicon_transducer)
 
     et.save_transducer('lexicon_transducer_dta.hfst', lexicon_transducer)
 
@@ -78,7 +84,7 @@ def main():
 
     print("Read Punctuation...")
 
-    freq_list = read_lexicon("dta_punctuation_corrected.txt")
+    freq_list = read_lexicon("dta_punctuation.txt")
     #lexicon_transducer = et.transducer_from_list(freq_list, frequency_class=True, identity_transitions=True)
 
     print("Construct Punctuation Transducer...")
