@@ -20,7 +20,6 @@ def get_path_dicts(basic_fst):
 
     while len(visited) < num_states:
 
-        # TODO: hier darf nicht von einer leere Queue gepopt werden
         actual_state = queue.pop()
         visited.append(actual_state)
 
@@ -54,47 +53,6 @@ def get_path_dicts(basic_fst):
 
 def merge_word_borders(basic_fst, path_dict, predecessor_dict):
 
-    #initial_state = 0
-
-    #path_dict = {}          # input string leading to state
-    #output_dict = {}        # output string leading to state
-    #transition_dict = {}    # transition leading to state
-    #predecessor_dict = {}   # predecessor state of state
-
-    #states = basic_fst.states()
-    #num_states = len(states)
-    #visited = []
-    #queue = [initial_state]
-
-    #while len(visited) < num_states:
-
-    #    actual_state = queue.pop()
-    #    visited.append(actual_state)
-
-    #    # set string leading to actual_state
-    #    if len(visited) > 1:
-    #        predecessor = predecessor_dict[actual_state]
-    #        input_symbol = transition_dict[actual_state].get_input_symbol()
-    #        if input_symbol == hfst.EPSILON:
-    #            input_symbol = ''
-    #        path_dict[actual_state] = path_dict[predecessor] + input_symbol
-    #        output_symbol = transition_dict[actual_state].get_output_symbol()
-    #        if output_symbol == hfst.EPSILON:
-    #            output_symbol = ''
-    #        output_dict[actual_state] = output_dict[predecessor] + output_symbol
-    #    else:
-    #        path_dict[actual_state] = ''
-    #        output_dict[actual_state] = ''
-
-    #    # add new states to queue
-    #    transitions = basic_fst.transitions(actual_state)
-    #    for transition in transitions:
-    #        target = transition.get_target_state()
-    #        if target not in visited and target not in queue:
-    #            predecessor_dict[target] = actual_state
-    #            transition_dict[target] = transition
-    #            queue.append(target)
-
    # find states with space as input symbol and output_symbol
     input_space_states = []
     for state, transitions in enumerate(basic_fst):
@@ -121,13 +79,10 @@ def merge_word_borders(basic_fst, path_dict, predecessor_dict):
     #print("merge candidates: ", merge_candidates)
 
     # find pairs of corresponding states and merge
-    ## compare candidates with all other states, because new last states do
-    ## not end with a space character, but with a word
     # compare with other merge_candidates, because new last states are
     # handled by adding states without outgoing transitions
     for i, state1 in enumerate(merge_candidates):
         for state2 in merge_candidates[i:]:
-        #for state2 in basic_fst.states():
             if path_dict[state1] == path_dict[state2]:
                 #print("corresponding input string ", path_dict[state1])
                 #print("output_string1 ", output_dict[state1])
@@ -169,6 +124,10 @@ def prepare_input(input_str, window_size):
     window_size words."""
 
     splitted = input_str.split(' ')
+
+    #if len(splitted) < window_size:
+    #    return ' '.join(splitted) + ' '
+
     input_list = []
 
     for i in range(0, len(splitted) - window_size + 1):
@@ -184,18 +143,31 @@ def compose_and_search(input_str, error_transducer, lexicon_transducer, result_n
 
     result_fst = input_fst.copy()
 
+    #print("Input: ", input_str)
+    #print("compose transducers")
+    #print("Input States: ", result_fst.number_of_states())
+
     result_fst.compose(error_transducer)
     result_fst.compose(lexicon_transducer)
+
+    #print("Result States: ", result_fst.number_of_states())
+
+    #print("Error States: ", error_transducer.number_of_states())
+    #print("Lexicon States: ", lexicon_transducer.number_of_states())
 
     #result_fst.n_best(result_num)
     #results = input_fst.extract_paths(max_cycles=0, max_number=5, output='dict')
 
     #results = input_fst.extract_paths(max_number=result_num)
 
+    #print("get best paths")
+
     result_fst.n_best(result_num)
 
+    #print("Result States: ", result_fst.number_of_states())
+
     if result_fst.number_of_states() == 0:
-        print("result empty")
+        #print("result empty")
         #input_fst.set_final_weights(100.0)
         input_fst = set_transition_weights(input_fst)
         return input_fst
@@ -224,14 +196,14 @@ def get_append_states(basic_fst, window_size, path_dict, output_dict):
     # take input string with correct position depending on window_size
     append_string = input_strings[- window_size]
 
-    print('APPEND STRING: ', append_string)
+    #print('APPEND STRING: ', append_string)
 
     # take all states with the correct input string
     items = list(path_dict.items())
     filtered_items = list(filter(lambda x: x[1] == append_string, items))
 
     append_state_candidates = list(map(lambda x: x[0], filtered_items))
-    print('APPEND STATE CANDIDATES: ', append_state_candidates)
+    #print('APPEND STATE CANDIDATES: ', append_state_candidates)
 
     # filter for states with ingoing transition with output space
     #append_states = []
@@ -244,9 +216,11 @@ def get_append_states(basic_fst, window_size, path_dict, output_dict):
     #            print("input character ", transition.get_output_symbol())
     #            append_states.append(transition.get_target_state())
 
-    append_states = list(filter(lambda x: output_dict[x][-1] == ' ', append_state_candidates))
+    #print('Output Dict: ', list(map(lambda x: output_dict[x], append_state_candidates)))
 
-    print('APPEND STATES: ', append_states)
+    append_states = list(filter(lambda x: output_dict[x] == '' or output_dict[x][-1] == ' ', append_state_candidates))
+
+    #print('APPEND STATES: ', append_states)
 
     return append_states, append_state_candidates
 
@@ -257,11 +231,14 @@ def print_output_paths(basic_fst):
     for input, outputs in complete_paths.items():
         print('%s:' % input.replace('@_EPSILON_SYMBOL_@', '□'))
         for output in outputs:
-            print(' %s\t%f' % (output[0].replace('@_EPSILON_SYMBOL_@', ''), output[1]))
+            print('%s\t%f' % (output[0].replace('@_EPSILON_SYMBOL_@', ''), output[1]))
     print('\n')
 
 
 def combine_results(result_list, window_size):
+
+    #for fst in result_list:
+    #    print_output_paths(fst)
 
     starting_fst = result_list[0].copy()
     result_fst = hfst.HfstBasicTransducer(starting_fst)
@@ -271,7 +248,7 @@ def combine_results(result_list, window_size):
 
     for i, fst in enumerate(result_list[1:]):
 
-        print(i)
+        #print(i)
 
         partial_fst = hfst.HfstBasicTransducer(fst)
         #merge_word_borders(partial_fst)
@@ -289,14 +266,14 @@ def combine_results(result_list, window_size):
         # if no word borders exist where result can be appended, append in
         # the middle of a word with a high weight
         if append_states == []:
-            print("APPEND STATES EMPTY")
+            #print("APPEND STATES EMPTY")
 
             for state in append_state_candidates:
                 result_fst.set_final_weight(state, 100.0)
 
 
-        print('BEFORE CONCATENATION RESULT PATHS')
-        print_output_paths(result_fst)
+        #print('BEFORE CONCATENATION RESULT PATHS')
+        #print_output_paths(result_fst)
 
         # concatenate result fst and partial result
         result_fst = hfst.HfstTransducer(result_fst)
@@ -304,13 +281,13 @@ def combine_results(result_list, window_size):
 
         result_fst.concatenate(partial_fst)
 
-        print("number of states :", result_fst.number_of_states())
+        #print("number of states :", result_fst.number_of_states())
 
-        print('PARTIAL RESULT PATHS')
-        print_output_paths(partial_fst)
+        #print('PARTIAL RESULT PATHS')
+        #print_output_paths(partial_fst)
 
-        print('AFTER CONCATENATION RESULT PATHS')
-        print_output_paths(result_fst)
+        #print('AFTER CONCATENATION RESULT PATHS')
+        #print_output_paths(result_fst)
 
         #result_fst.n_best(100)
 
@@ -320,8 +297,8 @@ def combine_results(result_list, window_size):
         path_dict, output_dict, transition_dict, predecessor_dict = get_path_dicts(result_fst)
         merge_word_borders(result_fst, path_dict, predecessor_dict)
 
-        print('AFTER MERGE RESULT PATHS')
-        print_output_paths(result_fst)
+        #print('AFTER MERGE RESULT PATHS')
+        #print_output_paths(result_fst)
 
         #output_dict, path_dict = merge_word_borders(result_fst)
 
@@ -330,17 +307,79 @@ def combine_results(result_list, window_size):
 
 def create_result_transducer(input_str, window_size, words_per_window, error_transducer, lexicon_transducer, result_num):
 
-    lexicon_transducer.repeat_n(words_per_window)
+    #lexicon_transducer.repeat_n(words_per_window)
 
     input_list = prepare_input(input_str, window_size)
+    #print("Input List: ", input_list)
     output_list = []
 
     for single_input in input_list:
-
+        #print("Single Input: ", single_input)
         results = compose_and_search(single_input, error_transducer, lexicon_transducer, result_num)
         output_list.append(results)
 
     complete_output = hfst.HfstTransducer(combine_results(output_list, window_size))
+
+    return complete_output
+
+
+def load_transducers(error_file, punctuation_file, lexicon_file):
+
+    # create transducers
+
+    #error_transducer = et.load_transducer('transducers/max_error_3.hfst')
+    #error_transducer = et.load_transducer('transducers/max_error_3_context_123_dta.htsf')
+    #error_transducer = et.load_transducer('transducers/max_error_3_context_23_dta.htsf')
+    error_transducer = et.load_transducer(error_file)
+
+    punctuation_transducer = et.load_transducer(punctuation_file)
+    punctuation_transducer.optionalize()
+
+    #lexicon_transducer = et.load_transducer('transducers/lexicon.hfst')
+    lexicon_transducer = et.load_transducer(lexicon_file)
+    #lexicon_transducer = et.load_transducer('transducers/lexicon_transducer_asse.hfst')
+    lexicon_transducer.concatenate(punctuation_transducer)
+    space_transducer = hfst.regex('% :% ')
+    lexicon_transducer.concatenate(space_transducer)
+    lexicon_transducer.optionalize()
+
+    return error_transducer, lexicon_transducer
+
+
+def window_size_1(input_str, error_transducer, lexicon_transducer, result_num=10):
+
+    window_1 = create_result_transducer(input_str, 1, 3, error_transducer, lexicon_transducer, result_num)
+
+    return window_1
+
+def window_size_2(input_str, error_transducer, lexicon_transducer, result_num=10):
+
+    if ' ' not in input_str:
+        return window_size_1(input_str, error_transducer, lexicon_transducer, result_num)
+
+    window_2 = create_result_transducer(input_str, 2, 3, error_transducer, lexicon_transducer, result_num)
+
+    return window_2
+
+
+def window_size_1_2(input_str, error_transducer, lexicon_transducer, result_num=10):
+
+    if ' ' not in input_str:
+        return window_size_1(input_str, error_transducer, lexicon_transducer, result_num)
+
+    # create results transducers for window sizes 1 and 2, disjunct and merge states
+
+    window_1 = create_result_transducer(input_str, 1, 3, error_transducer, lexicon_transducer, result_num)
+
+    window_2 = create_result_transducer(input_str, 2, 3, error_transducer, lexicon_transducer, result_num)
+    window_1.disjunct(window_2)
+
+    complete_output_basic = hfst.HfstBasicTransducer(window_1)
+
+    path_dict, output_dict, transition_dict, predecessor_dict = get_path_dicts(complete_output_basic)
+    merge_word_borders(complete_output_basic, path_dict, predecessor_dict)
+
+    complete_output = hfst.HfstTransducer(complete_output_basic)
 
     return complete_output
 
@@ -352,100 +391,53 @@ def main():
     #input_str = "fur"
     #input_str = "das miüssenwirklich seHr sclnöne bla ue Schuhe seln"
     #input_str = "Das miüssenwirklich seHr sclnöne bla ue sein"
-    input_str = "miü ssen miü ssen wirklich"# seHr sclnöne bla ue Schuhe seln"
+    #input_str = "miü ssen miü ssen wirklich"# seHr sclnöne bla ue Schuhe seln"
     #input_str = "sclnöne bla ue sein"
     #input_str = "Philoſophen von Fndicn dur<h Gricchenland bis"
-    #input_str = "Philoſophenvon Fndicn dur<h Gricche nland bls"
     #input_str = "wirrt ſah fie um ſh, und als fie den Mann mit dem"
 
     #window_size = 2
+    words_per_window = 3
+
+    #input_str = "Philoſophenvon Fndicn dur<h Gricche nland bls"
+    #input_str = 'Man frage weiter das ganze liebe Deutſchland'
+    input_str = 'in Dir den Pater Medardus wieder zu erken.'
+    #input_str = '3053'
+
+    #input_str.strip('\n\u000C')
+
     result_num = 10
-    #words_per_window = 3
 
-    # create transducers
-
-    error_transducer = et.load_transducer('transducers/max_error_3.hfst')
-    #error_transducer = et.load_transducer('transducers/max_error_3_context_123_dta.htsf')
-    #error_transducer = et.load_transducer('transducers/max_error_3_context_23_dta.htsf')
-
-    punctuation_transducer = et.load_transducer('transducers/punctuation_transducer_dta.hfst')
-    punctuation_transducer.optionalize()
-
-    lexicon_transducer = et.load_transducer('transducers/lexicon.hfst')
-    #lexicon_transducer = et.load_transducer('transducers/lexicon_transducer_dta.hfst')
-    #lexicon_transducer = et.load_transducer('transducers/lexicon_transducer_asse.hfst')
-    lexicon_transducer.concatenate(punctuation_transducer)
-    space_transducer = hfst.regex('% :% ')
-    lexicon_transducer.concatenate(space_transducer)
-    lexicon_transducer.optionalize()
-
-    ####
+    error_transducer, lexicon_transducer =\
+        load_transducers('transducers/max_error_3_context_23_dta.htsf',\
+        'transducers/punctuation_transducer_dta.hfst',\
+        'transducers/lexicon_transducer_dta.hfst')
+    lexicon_transducer.repeat_n(words_per_window)
 
 
-    #lexicon_transducer.repeat_n(words_per_window)
+    complete_output = window_size_1_2(input_str, error_transducer, lexicon_transducer, result_num)
+    complete_output.n_best(1)
+    complete_paths = hfst.HfstTransducer(complete_output).extract_paths(max_number=1, max_cycles=0)
+    #print(list(complete_paths.items())[0][1][0][0].replace('@_EPSILON_SYMBOL_@', ''))
 
-    #input_list = prepare_input(input_str, window_size)
-    #output_list = []
-
-    #for single_input in input_list:
-
-    #    print('\n')
-
-    #    results = compose_and_search(single_input, error_transducer, lexicon_transducer, result_num)
-    #    output_list.append(results)
-
-    #    print_output_paths(results)
-
-    #    #output_dict = results.extract_paths(max_number=result_num)
-
-    #    #for input, outputs in output_dict.items():
-    #    #    print('%s:' % input.replace('@_EPSILON_SYMBOL_@', '□'))
-    #    #    for output in outputs:
-    #    #        print(' %s\t%f' % (output[0].replace('@_EPSILON_SYMBOL_@', ''), output[1]))
-
-    #print('\n')
-
-    #complete_output = hfst.HfstTransducer(combine_results(output_list, window_size))
-    ##complete_paths = hfst.HfstTransducer(complete_output).extract_paths(max_number=result_num, max_cycles=0)
-
-    ####
+    #return
 
 
-
-
-
-    #create results transducers for window sizes 1 and 2, disjunct and
-    #merge states
-
-    window_2 = create_result_transducer(input_str, 2, 3, error_transducer, lexicon_transducer, result_num)
-    #window_1 = create_result_transducer(input_str, 1, 3, error_transducer, lexicon_transducer, result_num)
-
-    #window_2.disjunct(window_1)
-
-
-    #complete_output_basic = hfst.HfstBasicTransducer(window_2)
-
-    #path_dict, output_dict, transition_dict, predecessor_dict = get_path_dicts(complete_output_basic)
-    #merge_word_borders(complete_output_basic, path_dict, predecessor_dict)
-
-    #complete_output = hfst.HfstTransducer(complete_output_basic)
-
-    complete_output = window_2
+    #complete_output.n_best(1)
+    #complete_paths = hfst.HfstTransducer(complete_output).extract_paths(max_number=result_num, max_cycles=0)
 
 
     #complete_output.n_best(result_num)
-    complete_output.n_best(200)
     #print_output_paths(complete_output)
 
-    #complete_paths = hfst.HfstTransducer(complete_output).extract_shortest_paths()
+    complete_paths = hfst.HfstTransducer(complete_output).extract_shortest_paths()
 
-    complete_paths = hfst.HfstTransducer(complete_output).extract_paths(max_number=result_num, max_cycles=0)
 
 
     for input, outputs in complete_paths.items():
         print('%s:' % input.replace('@_EPSILON_SYMBOL_@', '□'))
         for output in outputs:
-            print(' %s\t%f' % (output[0].replace('@_EPSILON_SYMBOL_@', ''), output[1]))
+            print('%s\t%f' % (output[0].replace('@_EPSILON_SYMBOL_@', ''), output[1]))
 
 
 if __name__ == '__main__':
