@@ -3,6 +3,8 @@ import hfst
 import libhfst
 import error_transducer as et
 
+from composition import pyComposition
+
 
 def get_path_dicts(basic_fst):
 
@@ -137,42 +139,52 @@ def prepare_input(input_str, window_size):
     return input_list
 
 
-def compose_and_search(input_str, error_transducer, lexicon_transducer, result_num):
+def compose_and_search(input_str, error_transducer, lexicon_transducer, result_num, composition = None):
 
-    input_fst = create_input_transducer(input_str)
+    if composition != None:
 
-    result_fst = input_fst.copy()
+        composition.compose(input_str.encode())
 
-    #print("Input: ", input_str)
-    #print("compose transducers")
-    #print("Input States: ", result_fst.number_of_states())
+        result = et.load_transducer(input_str + '.fst')
 
-    result_fst.compose(error_transducer)
-    result_fst.compose(lexicon_transducer)
+        return result
 
-    #print("Result States: ", result_fst.number_of_states())
+    else:
 
-    #print("Error States: ", error_transducer.number_of_states())
-    #print("Lexicon States: ", lexicon_transducer.number_of_states())
+        input_fst = create_input_transducer(input_str)
 
-    #result_fst.n_best(result_num)
-    #results = input_fst.extract_paths(max_cycles=0, max_number=5, output='dict')
+        result_fst = input_fst.copy()
 
-    #results = input_fst.extract_paths(max_number=result_num)
+        #print("Input: ", input_str)
+        #print("compose transducers")
+        #print("Input States: ", result_fst.number_of_states())
 
-    #print("get best paths")
+        result_fst.compose(error_transducer)
+        result_fst.compose(lexicon_transducer)
 
-    result_fst.n_best(result_num)
+        #print("Result States: ", result_fst.number_of_states())
 
-    #print("Result States: ", result_fst.number_of_states())
+        #print("Error States: ", error_transducer.number_of_states())
+        #print("Lexicon States: ", lexicon_transducer.number_of_states())
 
-    if result_fst.number_of_states() == 0:
-        #print("result empty")
-        #input_fst.set_final_weights(100.0)
-        input_fst = set_transition_weights(input_fst)
-        return input_fst
+        #result_fst.n_best(result_num)
+        #results = input_fst.extract_paths(max_cycles=0, max_number=5, output='dict')
 
-    return result_fst
+        #results = input_fst.extract_paths(max_number=result_num)
+
+        #print("get best paths")
+
+        result_fst.n_best(result_num)
+
+        #print("Result States: ", result_fst.number_of_states())
+
+        if result_fst.number_of_states() == 0:
+            #print("result empty")
+            #input_fst.set_final_weights(100.0)
+            input_fst = set_transition_weights(input_fst)
+            return input_fst
+
+        return result_fst
 
 
 def set_transition_weights(fst):
@@ -305,7 +317,7 @@ def combine_results(result_list, window_size):
     return result_fst
 
 
-def create_result_transducer(input_str, window_size, words_per_window, error_transducer, lexicon_transducer, result_num):
+def create_result_transducer(input_str, window_size, words_per_window, error_transducer, lexicon_transducer, result_num, composition=None):
 
     #lexicon_transducer.repeat_n(words_per_window)
 
@@ -315,7 +327,8 @@ def create_result_transducer(input_str, window_size, words_per_window, error_tra
 
     for single_input in input_list:
         #print("Single Input: ", single_input)
-        results = compose_and_search(single_input, error_transducer, lexicon_transducer, result_num)
+        results = compose_and_search(single_input, error_transducer, lexicon_transducer, result_num, composition)
+
         output_list.append(results)
 
     complete_output = hfst.HfstTransducer(combine_results(output_list, window_size))
@@ -346,32 +359,32 @@ def load_transducers(error_file, punctuation_file, lexicon_file):
     return error_transducer, lexicon_transducer
 
 
-def window_size_1(input_str, error_transducer, lexicon_transducer, result_num=10):
+def window_size_1(input_str, error_transducer, lexicon_transducer, result_num=10, composition=None):
 
-    window_1 = create_result_transducer(input_str, 1, 3, error_transducer, lexicon_transducer, result_num)
+    window_1 = create_result_transducer(input_str, 1, 3, error_transducer, lexicon_transducer, result_num, composition)
 
     return window_1
 
-def window_size_2(input_str, error_transducer, lexicon_transducer, result_num=10):
+def window_size_2(input_str, error_transducer, lexicon_transducer, result_num=10, composition=None):
 
     if ' ' not in input_str:
         return window_size_1(input_str, error_transducer, lexicon_transducer, result_num)
 
-    window_2 = create_result_transducer(input_str, 2, 3, error_transducer, lexicon_transducer, result_num)
+    window_2 = create_result_transducer(input_str, 2, 3, error_transducer, lexicon_transducer, result_num, composition)
 
     return window_2
 
 
-def window_size_1_2(input_str, error_transducer, lexicon_transducer, result_num=10):
+def window_size_1_2(input_str, error_transducer, lexicon_transducer, result_num=10, composition=None):
 
     if ' ' not in input_str:
-        return window_size_1(input_str, error_transducer, lexicon_transducer, result_num)
+        return window_size_1(input_str, error_transducer, lexicon_transducer, result_num, composition)
 
     # create results transducers for window sizes 1 and 2, disjunct and merge states
 
-    window_1 = create_result_transducer(input_str, 1, 3, error_transducer, lexicon_transducer, result_num)
+    window_1 = create_result_transducer(input_str, 1, 3, error_transducer, lexicon_transducer, result_num, composition)
 
-    window_2 = create_result_transducer(input_str, 2, 3, error_transducer, lexicon_transducer, result_num)
+    window_2 = create_result_transducer(input_str, 2, 3, error_transducer, lexicon_transducer, result_num, composition)
     window_1.disjunct(window_2)
 
     complete_output_basic = hfst.HfstBasicTransducer(window_1)
@@ -409,18 +422,48 @@ def main():
     result_num = 10
 
     error_transducer, lexicon_transducer =\
-        load_transducers('transducers/max_error_3_context_23_dta.htsf',\
+        load_transducers('transducers/max_error_3_context_23_dta.hfst',\
         'transducers/punctuation_transducer_dta.hfst',\
         'transducers/lexicon_transducer_dta.hfst')
     lexicon_transducer.repeat_n(words_per_window)
 
+    openfst = True # use OpenFST for composition?
 
-    complete_output = window_size_1_2(input_str, error_transducer, lexicon_transducer, result_num)
+    if openfst:
+
+        # write lexicon and error transducer in OpenFST format
+
+        error_filename = 'error.ofst'
+        lexicon_filename = 'lexicon.ofst'
+        error_filename_b = b'error.ofst'
+        lexicon_filename_b = b'lexicon.ofst'
+
+        for filename, fst in [(error_filename, error_transducer), (lexicon_filename, lexicon_transducer)]:
+            out = hfst.HfstOutputStream(filename=filename, hfst_format=False, type=hfst.ImplementationType.TROPICAL_OPENFST_TYPE)
+            out.write(fst)
+            out.flush()
+            out.close()
+
+        # generate Composition Object
+
+        composition = pyComposition(error_filename_b, lexicon_filename_b, result_num)
+        print(composition)
+
+        # apply correction using Composition Object
+
+        complete_output = window_size_1_2(input_str, error_transducer, lexicon_transducer, result_num, composition)
+
+
+    else:
+
+        # apply correction directly in hfst
+
+        complete_output = window_size_1_2(input_str, error_transducer, lexicon_transducer, result_num)
+
+
     complete_output.n_best(1)
     complete_paths = hfst.HfstTransducer(complete_output).extract_paths(max_number=1, max_cycles=0)
     #print(list(complete_paths.items())[0][1][0][0].replace('@_EPSILON_SYMBOL_@', ''))
-
-    #return
 
 
     #complete_output.n_best(1)
@@ -431,8 +474,6 @@ def main():
     #print_output_paths(complete_output)
 
     complete_paths = hfst.HfstTransducer(complete_output).extract_shortest_paths()
-
-
 
     for input, outputs in complete_paths.items():
         print('%s:' % input.replace('@_EPSILON_SYMBOL_@', '□'))
