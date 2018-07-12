@@ -94,6 +94,31 @@ def main():
     punctuation_transducer = hfst.HfstTransducer(punctuation_transducer)
     et.save_transducer('punctuation_transducer_dta.hfst', punctuation_transducer)
 
+
+    print("Read Open Bracket...")
+
+    freq_list = read_lexicon("open_bracket.txt")
+
+    print("Construct Open Bracket Transducer...")
+
+    open_bracket_transducer = transducer_from_list(freq_list)
+
+    open_bracket_transducer = hfst.HfstTransducer(open_bracket_transducer)
+    et.save_transducer('open_bracket_transducer_dta.hfst', open_bracket_transducer)
+
+
+    print("Read Close Bracket...")
+
+    freq_list = read_lexicon("close_bracket.txt")
+
+    print("Construct Open Bracket Transducer...")
+
+    close_bracket_transducer = transducer_from_list(freq_list)
+
+    close_bracket_transducer = hfst.HfstTransducer(close_bracket_transducer)
+    et.save_transducer('close_bracket_transducer_dta.hfst', close_bracket_transducer)
+
+
     #et.save_transducer('lexicon_transducer_asse.hfst', lexicon_transducer)
     #with open('punctuation_transducer_dta.att', 'w') as f:
     #    punctuation_transducer.write_att(f, write_weights=True)

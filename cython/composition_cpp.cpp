@@ -72,7 +72,7 @@ string Composition::compose(const string input_str) {
         false, // lazy
         this->nbest);
     
-    string filename = input_str + string(".fst");
+    string filename = string("output/") +  input_str + string(".fst");
 
     nbest_transducer.Write(filename);
 

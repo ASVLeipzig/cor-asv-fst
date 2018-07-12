@@ -1,6 +1,7 @@
 import sliding_window as sw
 from os import listdir
 import hfst
+from composition import pyComposition
 
 
 def get_txt_files(directory, model):
@@ -26,21 +27,46 @@ def write_txt_file(directory, model, name, string):
 
 def main():
 
+
+    # prepare transducers
+
     words_per_window = 3
     result_num = 10
-    error_transducer, lexicon_transducer = sw.load_transducers('transducers/max_error_3_context_23_dta.htsf',\
+    error_transducer, lexicon_transducer =\
+        sw.load_transducers('transducers/max_error_3_context_23_dta.hfst',\
         'transducers/punctuation_transducer_dta.hfst',\
-        'transducers/lexicon_transducer_dta.hfst')
+        'transducers/lexicon_transducer_dta.hfst',\
+        'transducers/open_bracket_transducer_dta.hfst',\
+        'transducers/close_bracket_transducer_dta.hfst')
 
     lexicon_transducer.repeat_n(words_per_window)
 
 
-    path = '../dta19-reduced/testdata/'
+
+    # prepare Composition Object
+
+    error_filename = 'error.ofst'
+    lexicon_filename = 'lexicon.ofst'
+    error_filename_b = b'error.ofst'
+    lexicon_filename_b = b'lexicon.ofst'
+
+    for filename, fst in [(error_filename, error_transducer), (lexicon_filename, lexicon_transducer)]:
+        out = hfst.HfstOutputStream(filename=filename, hfst_format=False, type=hfst.ImplementationType.TROPICAL_OPENFST_TYPE)
+        out.write(fst)
+        out.flush()
+        out.close()
+
+    composition = pyComposition(error_filename_b, lexicon_filename_b, result_num)
+
+
+    # read and process test data
+
+    path = '../../dta19-reduced/testdata/'
 
     gt_dict = create_dict(path, 'gt')
     fraktur4_dict = create_dict(path, 'Fraktur4')
 
-    for key, value in list(fraktur4_dict.items())[43:]:#[10:20]:
+    for key, value in list(fraktur4_dict.items()):#[10:20]:
 
         #input_str = value.strip(' \n\u000C')
         input_str = value
@@ -49,21 +75,16 @@ def main():
         print(value)
         print(gt_dict[key])
 
-
-
-        complete_output = sw.window_size_1_2(input_str, error_transducer, lexicon_transducer, result_num)
-
-        complete_output.n_best(200)
+        complete_output = sw.window_size_1_2(input_str, error_transducer, lexicon_transducer, result_num, composition)
+        complete_output.n_best(1)
         complete_paths = hfst.HfstTransducer(complete_output).extract_paths(max_number=1, max_cycles=0)
+        output_str = list(complete_paths.items())[0][1][0][0].replace('@_EPSILON_SYMBOL_@', '')
 
-        for input, outputs in complete_paths.items():
-            #print('%s:' % input.replace('@_EPSILON_SYMBOL_@', '□'))
-            for output in outputs:
-                #print(' %s\t%f' % (output[0].replace('@_EPSILON_SYMBOL_@', ''), output[1]))
-               print('%s\t%f' % (output[0].replace('@_EPSILON_SYMBOL_@', ''), output[1]))
-
+        print(output_str)
         print()
 
+        with open(path + key + '.Fraktur4_corrected.txt', 'w') as f:
+            f.write(output_str)
 
 
     return

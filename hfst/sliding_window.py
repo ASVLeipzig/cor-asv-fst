@@ -3,6 +3,8 @@ import hfst
 import libhfst
 import error_transducer as et
 
+import time
+
 from composition import pyComposition
 
 
@@ -141,17 +143,16 @@ def prepare_input(input_str, window_size):
 
 def compose_and_search(input_str, error_transducer, lexicon_transducer, result_num, composition = None):
 
+    input_fst = create_input_transducer(input_str)
+
     if composition != None:
 
         composition.compose(input_str.encode())
 
-        result = et.load_transducer(input_str + '.fst')
-
-        return result
+        result_fst = et.load_transducer('output/' + input_str + '.fst')
+        #result_fst = et.load_transducer(input_str + '.fst')
 
     else:
-
-        input_fst = create_input_transducer(input_str)
 
         result_fst = input_fst.copy()
 
@@ -178,13 +179,13 @@ def compose_and_search(input_str, error_transducer, lexicon_transducer, result_n
 
         #print("Result States: ", result_fst.number_of_states())
 
-        if result_fst.number_of_states() == 0:
-            #print("result empty")
-            #input_fst.set_final_weights(100.0)
-            input_fst = set_transition_weights(input_fst)
-            return input_fst
+    if result_fst.number_of_states() == 0 or result_fst.number_of_arcs() == 0:
+        #print("result empty")
+        #input_fst.set_final_weights(100.0)
+        input_fst = set_transition_weights(input_fst)
+        return input_fst
 
-        return result_fst
+    return result_fst
 
 
 def set_transition_weights(fst):
@@ -321,6 +322,8 @@ def create_result_transducer(input_str, window_size, words_per_window, error_tra
 
     #lexicon_transducer.repeat_n(words_per_window)
 
+    start = time.time()
+
     input_list = prepare_input(input_str, window_size)
     #print("Input List: ", input_list)
     output_list = []
@@ -331,32 +334,52 @@ def create_result_transducer(input_str, window_size, words_per_window, error_tra
 
         output_list.append(results)
 
+    after_composition = time.time()
+
     complete_output = hfst.HfstTransducer(combine_results(output_list, window_size))
+
+    after_combination = time.time()
+
+    print('Composition Time: ', after_composition - start)
+    print('Combination Time: ', after_combination - after_composition)
 
     return complete_output
 
 
-def load_transducers(error_file, punctuation_file, lexicon_file):
+def load_transducers(error_file, punctuation_file, lexicon_file, open_bracket_file, close_bracket_file, morphology_file=None):
 
-    # create transducers
+    # load transducers
 
-    #error_transducer = et.load_transducer('transducers/max_error_3.hfst')
-    #error_transducer = et.load_transducer('transducers/max_error_3_context_123_dta.htsf')
-    #error_transducer = et.load_transducer('transducers/max_error_3_context_23_dta.htsf')
     error_transducer = et.load_transducer(error_file)
 
     punctuation_transducer = et.load_transducer(punctuation_file)
     punctuation_transducer.optionalize()
 
-    #lexicon_transducer = et.load_transducer('transducers/lexicon.hfst')
-    lexicon_transducer = et.load_transducer(lexicon_file)
-    #lexicon_transducer = et.load_transducer('transducers/lexicon_transducer_asse.hfst')
-    lexicon_transducer.concatenate(punctuation_transducer)
-    space_transducer = hfst.regex('% :% ')
-    lexicon_transducer.concatenate(space_transducer)
-    lexicon_transducer.optionalize()
+    open_bracket_transducer = et.load_transducer(open_bracket_file)
+    open_bracket_transducer.optionalize()
+    close_bracket_transducer = et.load_transducer(close_bracket_file)
+    close_bracket_transducer.optionalize()
 
-    return error_transducer, lexicon_transducer
+    lexicon_transducer = et.load_transducer(lexicon_file)
+
+    if morphology_file != None:
+        morphology_transducer = et.load_transducer(morphology_file)
+        lexicon_transducer.compose(morphology_transducer)
+
+    space_transducer = hfst.regex('% :% ')
+
+
+    # combine transducers to lexicon transducer
+
+    result_lexicon_transducer = open_bracket_transducer.copy()
+    result_lexicon_transducer.concatenate(lexicon_transducer)
+    result_lexicon_transducer.concatenate(punctuation_transducer)
+    result_lexicon_transducer.concatenate(close_bracket_transducer)
+    result_lexicon_transducer.concatenate(space_transducer)
+    result_lexicon_transducer.optionalize()
+
+
+    return error_transducer, result_lexicon_transducer
 
 
 def window_size_1(input_str, error_transducer, lexicon_transducer, result_num=10, composition=None):
@@ -389,8 +412,14 @@ def window_size_1_2(input_str, error_transducer, lexicon_transducer, result_num=
 
     complete_output_basic = hfst.HfstBasicTransducer(window_1)
 
+    before_merge = time.time()
+
     path_dict, output_dict, transition_dict, predecessor_dict = get_path_dicts(complete_output_basic)
     merge_word_borders(complete_output_basic, path_dict, predecessor_dict)
+
+    after_merge = time.time()
+
+    print('Merge Time: ', after_merge - before_merge)
 
     complete_output = hfst.HfstTransducer(complete_output_basic)
 
@@ -398,6 +427,8 @@ def window_size_1_2(input_str, error_transducer, lexicon_transducer, result_num=
 
 
 def main():
+
+    start = time.time()
 
     #input_str = "bIeibt"
     #input_str = "{CAP}unterlagen"
@@ -414,8 +445,9 @@ def main():
 
     #input_str = "Philoſophenvon Fndicn dur<h Gricche nland bls"
     #input_str = 'Man frage weiter das ganze liebe Deutſchland'
-    input_str = 'in Dir den Pater Medardus wieder zu erken.'
+    #input_str = 'in Dir den Pater Medardus wieder zu erken.'
     #input_str = '3053'
+    input_str = "trachtet; ih ſehe ſeine weite ausgetáſeléte"
 
     #input_str.strip('\n\u000C')
 
@@ -424,7 +456,10 @@ def main():
     error_transducer, lexicon_transducer =\
         load_transducers('transducers/max_error_3_context_23_dta.hfst',\
         'transducers/punctuation_transducer_dta.hfst',\
-        'transducers/lexicon_transducer_dta.hfst')
+        'transducers/lexicon_transducer_dta.hfst',\
+        'transducers/open_bracket_transducer_dta.hfst',\
+        'transducers/close_bracket_transducer_dta.hfst')
+        #'transducers/morphology_with_identity.hfst')
     lexicon_transducer.repeat_n(words_per_window)
 
     openfst = True # use OpenFST for composition?
@@ -449,12 +484,18 @@ def main():
         composition = pyComposition(error_filename_b, lexicon_filename_b, result_num)
         print(composition)
 
+        preparation_done = time.time()
+        print('Preparation Time: ', preparation_done - start)
+
         # apply correction using Composition Object
 
         complete_output = window_size_1_2(input_str, error_transducer, lexicon_transducer, result_num, composition)
 
 
     else:
+
+        preparation_done = time.time()
+        print('Preparation Time: ', preparation_done - start)
 
         # apply correction directly in hfst
 
