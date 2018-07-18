@@ -116,6 +116,8 @@ def create_lexicon(line_dict, nlp):
 
     lexicon_dict = {}
     punctation_dict = {}
+    open_bracket_dict = {}
+    close_bracket_dict = {}
 
     lines = list(line_dict.values())
 
@@ -131,17 +133,27 @@ def create_lexicon(line_dict, nlp):
 
             # if word ends with hyphen, add hyphen as a punctuation mark
             text = token.text.strip()
+
             if len(text) > 1 and text[-1] == '—':
                 text = text[0:-1]
                 punctation_dict['—'] = punctation_dict.setdefault('—', 0) + 1
 
+            # handle open bracket marks
+            if text in ['"', '»', '(', '„']:
+
+                open_bracket_dict[text] = open_bracket_dict.setdefault(text, 0) + 1
+
+            # handle close bracket marks
+            elif text in ['"', '«', ')', '“', '‘', "'"]:
+
+                close_bracket_dict[text] = close_bracket_dict.setdefault(text, 0) + 1
+
             # punctuation marks must not contain letters or numbers
             # hyphens in the middle of the text are treated as words
-            if token.pos_ == 'PUNCT' and text != '—' and \
-                reduce(lambda x,y: x or y, list(map(lambda x: x.isalpha() or x.isnumeric, text)), False):
+            elif token.pos_ == 'PUNCT' and text != '—' and \
+                not reduce(lambda x,y: x or y, list(map(lambda x: x.isalpha()\
+                or x.isnumeric(), text)), False):
 
-                #print('PUNCT')
-                #print(text)
                 punctation_dict[text] = punctation_dict.setdefault(text, 0) + 1
 
             else:
@@ -162,7 +174,7 @@ def create_lexicon(line_dict, nlp):
                     else:
                         lexicon_dict[text[0].upper() + text[1:]] = lexicon_dict.setdefault(text[0].upper() + text[1:], 0) + 1
 
-    return lexicon_dict, punctation_dict
+    return lexicon_dict, punctation_dict, open_bracket_dict, close_bracket_dict
 
 
 def convert_to_relative_freq(lexicon_dict):
@@ -180,6 +192,8 @@ def write_lexicon(lexicon_dict, filename, log=True):
 
     with open(filename, 'w') as f:
         for word, freq in lexicon_list:
+            if word == '':
+                word = '@_EPSILON_SYMBOL_@'
             if log:
                 f.write(word + '\t' + str(- math.log(freq)) + '\n')
             else:
@@ -201,7 +215,7 @@ def main():
     #confusion_dict = get_confusion_dict(gt_dict, fraktur4_dict)
 
     nlp = spacy.load('de')
-    lexicon_dict, punctation_dict = create_lexicon(gt_dict, nlp)
+    lexicon_dict, punctuation_dict, open_bracket_dict, close_bracket_dict = create_lexicon(gt_dict, nlp)
 
     #line_id = '05110'
 
@@ -210,23 +224,33 @@ def main():
     #print(fraktur4_dict[line_id])
     #print(foo4_dict[line_id])
 
-    for entry in punctation_dict.items():
-        print(entry)
     for entry in lexicon_dict.items():
+        print(entry)
+    for entry in punctuation_dict.items():
+        print(entry)
+    for entry in open_bracket_dict.items():
+        print(entry)
+    for entry in close_bracket_dict.items():
         print(entry)
 
     #print(lexicon_dict['der'])
     #print(punctation_dict[','])
 
-    lexicon_dict = convert_to_relative_freq(lexicon_dict)
-    punctation_dict = convert_to_relative_freq(punctation_dict)
+    #lexicon_dict = convert_to_relative_freq(lexicon_dict)
+    #punctuation_dict = convert_to_relative_freq(punctuation_dict)
+    #open_bracket_dict = convert_to_relative_freq(open_bracket_dict)
+    #close_bracket_dict = convert_to_relative_freq(close_bracket_dict)
+
+    for dic in lexicon_dict, punctuation_dict, open_bracket_dict, close_bracket_dict:
+        dic = convert_to_relative_freq(dic)
 
     #print(lexicon_dict['der'])
     #print(punctation_dict[','])
 
     write_lexicon(lexicon_dict, 'dta_lexicon.txt')
-    write_lexicon(punctation_dict, 'dta_punctuation.txt')
-
+    write_lexicon(punctuation_dict, 'dta_punctuation.txt')
+    write_lexicon(open_bracket_dict, 'open_bracket.txt')
+    write_lexicon(close_bracket_dict, 'close_bracket.txt')
 
 if __name__ == '__main__':
     main()

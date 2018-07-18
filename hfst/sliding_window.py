@@ -179,11 +179,16 @@ def compose_and_search(input_str, error_transducer, lexicon_transducer, result_n
 
         #print("Result States: ", result_fst.number_of_states())
 
+    input_fst = set_transition_weights(input_fst)
+
     if result_fst.number_of_states() == 0 or result_fst.number_of_arcs() == 0:
         #print("result empty")
         #input_fst.set_final_weights(100.0)
         input_fst = set_transition_weights(input_fst)
         return input_fst
+
+    else:
+        result_fst.disjunct(input_fst)
 
     return result_fst
 
@@ -328,8 +333,9 @@ def create_result_transducer(input_str, window_size, words_per_window, error_tra
     #print("Input List: ", input_list)
     output_list = []
 
-    for single_input in input_list:
+    for i, single_input in enumerate(input_list):
         #print("Single Input: ", single_input)
+
         results = compose_and_search(single_input, error_transducer, lexicon_transducer, result_num, composition)
 
         output_list.append(results)
@@ -346,7 +352,7 @@ def create_result_transducer(input_str, window_size, words_per_window, error_tra
     return complete_output
 
 
-def load_transducers(error_file, punctuation_file, lexicon_file, open_bracket_file, close_bracket_file, morphology_file=None):
+def load_transducers_old(error_file, punctuation_file, lexicon_file, open_bracket_file, close_bracket_file, composition_depth=1, morphology_file=None):
 
     # load transducers
 
@@ -362,11 +368,29 @@ def load_transducers(error_file, punctuation_file, lexicon_file, open_bracket_fi
 
     lexicon_transducer = et.load_transducer(lexicon_file)
 
+    space_transducer = hfst.regex('% :% ')
+
+    # add pruned morphology to lexicon
+
     if morphology_file != None:
         morphology_transducer = et.load_transducer(morphology_file)
+        morphology_transducer.n_best(100)
         lexicon_transducer.compose(morphology_transducer)
 
-    space_transducer = hfst.regex('% :% ')
+    # add composed words to lexicon
+
+    if composition_depth > 1:
+
+        connect_composition = hfst.regex('s:s')
+        connect_composition.optionalize()
+
+        optional_lexicon_transducer = lexicon_transducer.copy()
+        optional_lexicon_transducer.optionalize()
+
+        connect_composition.concatenate(optional_lexicon_transducer)
+        connect_composition.repeat_n(composition_depth - 1)
+
+        lexicon_transducer.concatenate(connect_composition)
 
 
     # combine transducers to lexicon transducer
@@ -378,8 +402,71 @@ def load_transducers(error_file, punctuation_file, lexicon_file, open_bracket_fi
     result_lexicon_transducer.concatenate(space_transducer)
     result_lexicon_transducer.optionalize()
 
-
     return error_transducer, result_lexicon_transducer
+
+
+
+def load_transducers(error_file,\
+        lexicon_file,\
+        punctuation_left_file,\
+        punctuation_right_file,\
+        words_per_window = 3,\
+        composition_depth = 1):
+
+    # load transducers
+
+    error_transducer = et.load_transducer(error_file)
+
+    punctuation_left_transducer = et.load_transducer(punctuation_left_file)
+    punctuation_right_transducer = et.load_transducer(punctuation_right_file)
+
+    punctuation_left_transducer.optionalize()
+    punctuation_right_transducer.optionalize()
+
+    lexicon_transducer = et.load_transducer(lexicon_file)
+
+    space_transducer = hfst.regex('% :% ')
+
+    ## add pruned morphology to lexicon
+
+    #if morphology_file != None:
+    #    morphology_transducer = et.load_transducer(morphology_file)
+    #    morphology_transducer.n_best(100)
+    #    lexicon_transducer.compose(morphology_transducer)
+
+    # add composed words to lexicon
+
+    if composition_depth > 1:
+
+        connect_composition = hfst.regex('s:s')
+        connect_composition.optionalize()
+
+        optional_lexicon_transducer = lexicon_transducer.copy()
+        optional_lexicon_transducer.optionalize()
+
+        connect_composition.concatenate(optional_lexicon_transducer)
+        connect_composition.repeat_n(composition_depth - 1)
+
+        lexicon_transducer.concatenate(connect_composition)
+
+
+    # combine transducers to lexicon transducer
+
+    result_lexicon_transducer = lexicon_transducer.copy()
+    result_lexicon_transducer.concatenate(punctuation_left_transducer)
+    result_lexicon_transducer.concatenate(space_transducer)
+    result_lexicon_transducer.concatenate(punctuation_right_transducer)
+    result_lexicon_transducer.optionalize()
+
+    #result_lexicon_transducer.repeat_n(words_per_window)
+    result_lexicon_transducer.repeat_n(3)
+
+    output_lexicon = punctuation_right_transducer.copy()
+    output_lexicon.concatenate(result_lexicon_transducer)
+
+    return error_transducer, output_lexicon
+
+
 
 
 def window_size_1(input_str, error_transducer, lexicon_transducer, result_num=10, composition=None):
@@ -442,25 +529,49 @@ def main():
 
     #window_size = 2
     words_per_window = 3
+    composition_depth = 1
 
     #input_str = "Philoſophenvon Fndicn dur<h Gricche nland bls"
     #input_str = 'Man frage weiter das ganze liebe Deutſchland'
-    #input_str = 'in Dir den Pater Medardus wieder zu erken.'
+    #input_str = 'in Dir den Pater Medardus wieder zu erken—'
     #input_str = '3053'
-    input_str = "trachtet; ih ſehe ſeine weite ausgetáſeléte"
+    #input_str = "trachtet; ih ſehe ſeine weite ausgetáſeléte"
+    #input_str = "trachtet; ih ſehe ſeine weite ausgetáſeléte—"
+    #input_str = 'heit Anderer?« fragte ich lächelnd. »Mehr als jedes'
+    #input_str = '„ Zawort“! feuchet ſie im Grimme.'
+    # korrekt: „Jawort“! keuchet ſie im Grimme.
+    input_str = 'Sehstes Kapitel.'
 
     #input_str.strip('\n\u000C')
 
     result_num = 10
 
+    #error_transducer, lexicon_transducer =\
+    #    load_transducers('transducers/max_error_3_context_23_dta.hfst',\
+    #    'transducers/punctuation_transducer_dta.hfst',\
+    #    'transducers/lexicon_transducer_dta.hfst',\
+    #    'transducers/open_bracket_transducer_dta.hfst',\
+    #    'transducers/close_bracket_transducer_dta.hfst',
+    #    composition_depth = composition_depth)
+    #    #'transducers/morphology_with_identity.hfst')
+
+    #lexicon_transducer.repeat_n(words_per_window)
+
     error_transducer, lexicon_transducer =\
         load_transducers('transducers/max_error_3_context_23_dta.hfst',\
-        'transducers/punctuation_transducer_dta.hfst',\
         'transducers/lexicon_transducer_dta.hfst',\
-        'transducers/open_bracket_transducer_dta.hfst',\
-        'transducers/close_bracket_transducer_dta.hfst')
-        #'transducers/morphology_with_identity.hfst')
-    lexicon_transducer.repeat_n(words_per_window)
+        'transducers/left_punctuation.hfst',\
+        'transducers/right_punctuation.hfst',\
+        words_per_window = words_per_window,\
+        composition_depth = composition_depth)
+
+    #error_transducer, lexicon_transducer =\
+    #    load_transducers('transducers/max_error_3_context_23_dta.hfst',\
+    #    'transducers/lexicon_transducer_dta.hfst',\
+    #    'transducers/any_punctuation.hfst',\
+    #    'transducers/any_punctuation.hfst',\
+    #    words_per_window = words_per_window,\
+    #    composition_depth = composition_depth)
 
     openfst = True # use OpenFST for composition?
 
@@ -501,6 +612,12 @@ def main():
 
         complete_output = window_size_1_2(input_str, error_transducer, lexicon_transducer, result_num)
 
+
+
+    out = hfst.HfstOutputStream(filename='output/' + input_str + '.hfst', hfst_format=False, type=hfst.ImplementationType.TROPICAL_OPENFST_TYPE)
+    out.write(complete_output)
+    out.flush()
+    out.close()
 
     complete_output.n_best(1)
     complete_paths = hfst.HfstTransducer(complete_output).extract_paths(max_number=1, max_cycles=0)

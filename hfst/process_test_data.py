@@ -32,14 +32,33 @@ def main():
 
     words_per_window = 3
     result_num = 10
+    composition_depth = 2
+
+    #error_transducer, lexicon_transducer =\
+    #    sw.load_transducers('transducers/max_error_3_context_23_dta.hfst',\
+    #    'transducers/punctuation_transducer_dta.hfst',\
+    #    'transducers/lexicon_transducer_dta.hfst',\
+    #    'transducers/open_bracket_transducer_dta.hfst',\
+    #    'transducers/close_bracket_transducer_dta.hfst')
+
+    #lexicon_transducer.repeat_n(words_per_window)
+
+
     error_transducer, lexicon_transducer =\
         sw.load_transducers('transducers/max_error_3_context_23_dta.hfst',\
-        'transducers/punctuation_transducer_dta.hfst',\
         'transducers/lexicon_transducer_dta.hfst',\
-        'transducers/open_bracket_transducer_dta.hfst',\
-        'transducers/close_bracket_transducer_dta.hfst')
+        'transducers/left_punctuation.hfst',\
+        'transducers/right_punctuation.hfst',\
+        words_per_window = words_per_window,\
+        composition_depth = composition_depth)
 
-    lexicon_transducer.repeat_n(words_per_window)
+    #error_transducer, lexicon_transducer =\
+    #    sw.load_transducers('transducers/max_error_3_context_23_dta.hfst',\
+    #    'transducers/lexicon_transducer_dta.hfst',\
+    #    'transducers/any_punctuation.hfst',\
+    #    'transducers/any_punctuation.hfst',\
+    #    words_per_window = words_per_window,\
+    #    composition_depth = composition_depth)
 
 
 
