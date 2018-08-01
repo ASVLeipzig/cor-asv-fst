@@ -54,7 +54,6 @@ def get_path_dicts(basic_fst):
     return path_dict, output_dict, transition_dict, predecessor_dict
 
 
-
 def merge_word_borders(basic_fst, path_dict, predecessor_dict):
 
    # find states with space as input symbol and output_symbol
@@ -181,14 +180,14 @@ def compose_and_search(input_str, error_transducer, lexicon_transducer, result_n
 
     input_fst = set_transition_weights(input_fst)
 
-    if result_fst.number_of_states() == 0 or result_fst.number_of_arcs() == 0:
-        #print("result empty")
-        #input_fst.set_final_weights(100.0)
-        input_fst = set_transition_weights(input_fst)
-        return input_fst
+    #if result_fst.number_of_states() == 0 or result_fst.number_of_arcs() == 0:
+    #    #print("result empty")
+    #    #input_fst.set_final_weights(100.0)
+    #    input_fst = set_transition_weights(input_fst)
+    #    return input_fst
 
-    else:
-        result_fst.disjunct(input_fst)
+    #else:
+    result_fst.disjunct(input_fst)
 
     return result_fst
 
@@ -352,7 +351,9 @@ def create_result_transducer(input_str, window_size, words_per_window, error_tra
     return complete_output
 
 
-def load_transducers_old(error_file, punctuation_file, lexicon_file, open_bracket_file, close_bracket_file, composition_depth=1, morphology_file=None):
+def load_transducers_bracket(error_file, punctuation_file, lexicon_file,
+open_bracket_file, close_bracket_file, composition_depth=1,
+words_per_window=3, morphology_file=None):
 
     # load transducers
 
@@ -374,7 +375,6 @@ def load_transducers_old(error_file, punctuation_file, lexicon_file, open_bracke
 
     if morphology_file != None:
         morphology_transducer = et.load_transducer(morphology_file)
-        morphology_transducer.n_best(100)
         lexicon_transducer.compose(morphology_transducer)
 
     # add composed words to lexicon
@@ -402,11 +402,13 @@ def load_transducers_old(error_file, punctuation_file, lexicon_file, open_bracke
     result_lexicon_transducer.concatenate(space_transducer)
     result_lexicon_transducer.optionalize()
 
+    result_lexicon_transducer.repeat_n(words_per_window)
+
     return error_transducer, result_lexicon_transducer
 
 
 
-def load_transducers(error_file,\
+def load_transducers_inter_word(error_file,\
         lexicon_file,\
         punctuation_left_file,\
         punctuation_right_file,\
@@ -531,7 +533,7 @@ def main():
     words_per_window = 3
     composition_depth = 1
 
-    #input_str = "Philoſophenvon Fndicn dur<h Gricche nland bls"
+    input_str = "Philoſophenvon Fndicn dur<h Gricche nland bls"
     #input_str = 'Man frage weiter das ganze liebe Deutſchland'
     #input_str = 'in Dir den Pater Medardus wieder zu erken—'
     #input_str = '3053'
@@ -540,30 +542,35 @@ def main():
     #input_str = 'heit Anderer?« fragte ich lächelnd. »Mehr als jedes'
     #input_str = '„ Zawort“! feuchet ſie im Grimme.'
     # korrekt: „Jawort“! keuchet ſie im Grimme.
-    input_str = 'Sehstes Kapitel.'
+    #input_str = 'Sehstes Kapitel.'
+
+    #input_str = 'er das Fräulein auf einem ſchönen Zelter unten rider'
+    #input_str = 'er das Fräulein auf einem ſchönen Zelter unten rider'
 
     #input_str.strip('\n\u000C')
 
     result_num = 10
 
-    #error_transducer, lexicon_transducer =\
-    #    load_transducers('transducers/max_error_3_context_23_dta.hfst',\
-    #    'transducers/punctuation_transducer_dta.hfst',\
-    #    'transducers/lexicon_transducer_dta.hfst',\
-    #    'transducers/open_bracket_transducer_dta.hfst',\
-    #    'transducers/close_bracket_transducer_dta.hfst',
-    #    composition_depth = composition_depth)
-    #    #'transducers/morphology_with_identity.hfst')
+    error_transducer, lexicon_transducer =\
+        load_transducers_bracket(\
+        'transducers/max_error_3_context_23_dta.hfst',\
+        'transducers/punctuation_transducer_dta.hfst',\
+        'transducers/lexicon_transducer_dta.hfst',\
+        'transducers/open_bracket_transducer_dta.hfst',\
+        'transducers/close_bracket_transducer_dta.hfst',\
+        composition_depth = composition_depth,\
+        words_per_window = words_per_window)
+        #'transducers/morphology_with_identity.hfst')
 
     #lexicon_transducer.repeat_n(words_per_window)
 
-    error_transducer, lexicon_transducer =\
-        load_transducers('transducers/max_error_3_context_23_dta.hfst',\
-        'transducers/lexicon_transducer_dta.hfst',\
-        'transducers/left_punctuation.hfst',\
-        'transducers/right_punctuation.hfst',\
-        words_per_window = words_per_window,\
-        composition_depth = composition_depth)
+    #error_transducer, lexicon_transducer =\
+    #    load_transducers_inter_word('transducers/max_error_3_context_23_dta.hfst',\
+    #    'transducers/lexicon_transducer_dta.hfst',\
+    #    'transducers/left_punctuation.hfst',\
+    #    'transducers/right_punctuation.hfst',\
+    #    words_per_window = words_per_window,\
+    #    composition_depth = composition_depth)
 
     #error_transducer, lexicon_transducer =\
     #    load_transducers('transducers/max_error_3_context_23_dta.hfst',\
@@ -614,29 +621,107 @@ def main():
 
 
 
+    #out = hfst.HfstOutputStream(filename='output/' + input_str + '.hfst', hfst_format=False, type=hfst.ImplementationType.TROPICAL_OPENFST_TYPE)
+    #out.write(complete_output)
+    #out.flush()
+    #out.close()
+
+
+    # load and apply language model
+
+    print('Complete Output')
+    print_output_paths(complete_output)
+
+
+    complete_output.n_best(100)
+
+    ##complete_output.determinize()
+    ##complete_output.minimize()
+
+
+
+    #complete_paths = hfst.HfstTransducer(complete_output).extract_paths(max_number=10000, max_cycles=0)
+
+    #output_list = []
+
+    #for input, outputs in complete_paths.items():
+    #    for output in outputs:
+    #        text = output[0].replace('@_EPSILON_SYMBOL_@', '')
+    #        if not text in output_list:
+    #            output_list.append(text)
+
+    #print('Output List')
+    #for item in output_list:
+    #    print(item)
+
+
+
+
+
     out = hfst.HfstOutputStream(filename='output/' + input_str + '.hfst', hfst_format=False, type=hfst.ImplementationType.TROPICAL_OPENFST_TYPE)
     out.write(complete_output)
     out.flush()
     out.close()
 
-    complete_output.n_best(1)
-    complete_paths = hfst.HfstTransducer(complete_output).extract_paths(max_number=1, max_cycles=0)
+
+
+    lm_file = 'lang_mod_theta_0_000001.mod.modified.hfst'
+    lowercase_file = 'lowercase.hfst'
+
+    lm_fst = et.load_transducer(lm_file)
+    lowercase_fst = et.load_transducer(lowercase_file)
+
+    complete_output.output_project()
+
+    complete_output.compose(lowercase_fst)
+
+    print('Lowercase Output')
+    print_output_paths(complete_output)
+
+    complete_output.compose(lm_fst)
+
+    print('Language Model Output')
+    print_output_paths(complete_output)
+
+
+
+
+
+    # get 10 paths
+
+    #complete_output = complete_output.n_best(10)
+    #complete_paths = hfst.HfstTransducer(complete_output).extract_paths(max_number=10, max_cycles=0)
+
+    #complete_paths = hfst.HfstTransducer(complete_output).extract_paths(max_number=1000, max_cycles=0)
     #print(list(complete_paths.items())[0][1][0][0].replace('@_EPSILON_SYMBOL_@', ''))
 
 
-    #complete_output.n_best(1)
+    #complete_output.n_best(result_num)
     #complete_paths = hfst.HfstTransducer(complete_output).extract_paths(max_number=result_num, max_cycles=0)
 
+    #complete_paths = hfst.HfstTransducer(complete_output).extract_paths(max_number=10000, max_cycles=0)
+
+    #output_list = []
+
+    #for input, outputs in complete_paths.items():
+    #    for output in outputs:
+    #        text = output[0].replace('@_EPSILON_SYMBOL_@', '')
+    #        if not text in output_list:
+    #            output_list.append(text)
+
+    #print('Output List')
+    #for item in output_list:
+    #    print(item)
 
     #complete_output.n_best(result_num)
     #print_output_paths(complete_output)
 
-    complete_paths = hfst.HfstTransducer(complete_output).extract_shortest_paths()
+    #complete_paths = hfst.HfstTransducer(complete_output).extract_shortest_paths()
 
-    for input, outputs in complete_paths.items():
-        print('%s:' % input.replace('@_EPSILON_SYMBOL_@', '□'))
-        for output in outputs:
-            print('%s\t%f' % (output[0].replace('@_EPSILON_SYMBOL_@', ''), output[1]))
+    #for input, outputs in complete_paths.items():
+    #    #print('%s:' % input.replace('@_EPSILON_SYMBOL_@', '□'))
+    #    for output in outputs:
+    #        print('%s\t%f' % (output[0].replace('@_EPSILON_SYMBOL_@', ''), output[1]))
 
 
 if __name__ == '__main__':
