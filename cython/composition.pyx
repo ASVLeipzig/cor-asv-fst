@@ -6,6 +6,7 @@ cdef extern from "composition_cpp.h":
     cdef cppclass Composition:
         Composition(string error_file, string lexicon_file, int nbest)
         string compose(string input_str)
+        string compose_file(string input_str)
         string error_file
         string lexicon_file
         int nbest
@@ -30,6 +31,10 @@ cdef class pyComposition:
 
     def compose(self, string input_str):
         output_file = self.thisptr.compose(input_str)
+        return output_file
+
+    def compose_file(self, string input_file):
+        output_file = self.thisptr.compose_file(input_file)
         return output_file
 
 

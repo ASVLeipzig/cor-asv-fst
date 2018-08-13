@@ -31,6 +31,7 @@ public:
     ~Composition();
 
     string compose(const string input_str);
+    string compose_file(const string input_str);
 
     int nbest; 
 
@@ -39,11 +40,16 @@ public:
 
 private:
 
+    SymbolTable symbol_table;
+
     SVF create_input_transducer(string word, const SymbolTable* table);
+
     SVF eager_compose(SVF *input1, SVF *input2, SVF *input3, string word);
+    SVF eager_compose(SVF *input1, SVF *input2, SVF *input3, SVF *input_transducer);
+
     ComposeFst<StdArc> lazy_compose(SVF *input1, SVF *input2, SVF *input3, string word);
     SVF compose_and_search(SVF *input1, SVF *input2, SVF *input3, string word, bool lazy, int nbest);
-
+    SVF compose_and_search(SVF *input1, SVF *input2, SVF *input3, SVF *input_transducer, bool lazy, int nbest);
 
     SVF *error_transducer;
     SVF *lexicon_transducer;
