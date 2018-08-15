@@ -35,7 +35,6 @@ Composition::Composition(const string &error_file, const string &lexicon_file, i
 
     // write symbol table to file
 
-    //DEFINE_string(fst_field_separator, "@", "Set of characters used as a separator between printed fields");
     new_symbol_table.WriteText("symbol_table.txt"); 
     new_symbol_table.Write("symbol_table.bin"); 
     
@@ -133,7 +132,7 @@ SVF Composition::compose_and_search(
 
     //int32 nshortest = 1;
     int32 nshortest = nbest;
-    bool unique = false;
+    bool unique = true;
     bool first_path = false;
     StdArc::Weight weight_threshold = StdArc::Weight::Zero();
     StdArc::StateId state_threshold = kNoStateId;
@@ -186,6 +185,14 @@ SVF Composition::compose_and_search(
 
     SVF composed = eager_compose(input1, input2, input3, input_transducer);
 
+
+    // perform output projection, since unique option in shortest path
+    // search requires automaton/acceptor as input
+    if (unique) {
+        Project(&composed, PROJECT_OUTPUT);
+        RmEpsilon(&composed);
+    }
+
     ShortestPath(composed, &nbest_transducer, &distance, opts);
 
     //}
@@ -213,7 +220,7 @@ SVF Composition::compose_and_search(
 
     //int32 nshortest = 1;
     int32 nshortest = nbest;
-    bool unique = false;
+    bool unique = true;
     bool first_path = false;
     StdArc::Weight weight_threshold = StdArc::Weight::Zero();
     StdArc::StateId state_threshold = kNoStateId;
@@ -271,9 +278,12 @@ SVF Composition::compose_and_search(
 
         //ShortestPath(composed, &nbest_transducer, nbest);
 
-        //if (unique) {
-        //    Project(&composed, PROJECT_OUTPUT);
-        //}
+        // perform output projection, since unique option in shortest path
+        // search requires automaton/acceptor as input
+        if (unique) {
+            Project(&composed, PROJECT_OUTPUT);
+            RmEpsilon(&composed);
+        }
 
         ShortestPath(composed, &nbest_transducer, &distance, opts);
 
