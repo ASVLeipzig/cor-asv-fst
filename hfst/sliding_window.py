@@ -333,6 +333,7 @@ def compose_and_search(input_str, error_transducer, lexicon_transducer, result_n
 
     result_fst.determinize()
     result_fst.remove_epsilons()
+    #result_fst.minimize()
 
     input_fst = set_transition_weights(input_fst)
 
@@ -411,7 +412,7 @@ def print_output_paths(basic_fst):
         print('%s:' % input.replace('@_EPSILON_SYMBOL_@', '□'))
         for output in outputs:
             print('%s\t%f' % (output[0].replace('@_EPSILON_SYMBOL_@', ''), output[1]))
-    print('\n')
+    print('-')
     complete_paths = hfst.HfstTransducer(basic_fst).extract_paths(max_number=10, max_cycles=0)
     for input, outputs in complete_paths.items():
         print('%s:' % input.replace('@_EPSILON_SYMBOL_@', '□'))
@@ -589,7 +590,7 @@ def combine_results_new(result_list, window_size, flag_encoder):
 
     # start with first window
     starting_fst = result_list[0].copy()
-    starting_fst.output_project()
+    #starting_fst.output_project()
     #starting_fst.minimize()
     #starting_fst.remove_epsilons()
 
@@ -642,7 +643,7 @@ def combine_results_new(result_list, window_size, flag_encoder):
 
         #print('BEFORE CONCATENATION RESULT PATHS')
         #print_output_paths(result_fst)
-        write_fst('before_concatenation', result_fst)
+        #write_fst('before_concatenation', result_fst)
 
         # concatenate result fst and partial result
         result_fst = hfst.HfstTransducer(result_fst)
@@ -666,14 +667,14 @@ def combine_results_new(result_list, window_size, flag_encoder):
         #print('flag states', flag_state_dict.items())
         #print('final states', final_states)
 
-        write_fst('before_merge', result_fst)
+        #write_fst('before_merge', result_fst)
         #print('before merge', result_fst)
 
         complete_merge(result_fst, flag_encoder)
         flag_state_dict, final_states, predecessor_dict = get_flag_states(result_fst, 0, flag_encoder.flag_list)
 
         #print('after merge', result_fst)
-        write_fst('after_merge', result_fst)
+        #write_fst('after_merge', result_fst)
 
         #print('after merge')
         #print('flag states', flag_state_dict.items())
@@ -1108,7 +1109,62 @@ def window_size_1_2(input_str, error_transducer, lexicon_transducer, flag_encode
     return complete_output
 
 
+def remove_flags(fst, flag_encoder):
+    """Removes flags for construction of sliding window from a basic
+    fst, given the corresponding flag_encoder. This is performed by
+    deleting the transitions leaving the flag states (at the beginning of a
+    flag) and adding an epsilon transition to the state after the flag.
+    """
+
+    flag_state_dict, final_states, predecessor_dict = get_flag_states(fst, 0, flag_encoder.flag_list)
+
+    flag_length = len(flag_encoder.flag_list[0])
+
+    remove_transitions = []
+    add_transitions = []
+
+    flag_states = []
+    for key in flag_state_dict.keys():
+        flag_states += flag_state_dict[key]
+    #print(flag_states)
+
+    for state in flag_states:
+        for transition in fst.transitions(state):
+            new_target_state = transition.get_target_state()
+
+            remove_transitions.append((state, new_target_state, transition.get_input_symbol(),\
+                transition.get_output_symbol(), transition.get_weight()))
+            #((state, transition.get_target_state(), transition.get_input_symbol(),\
+            #    transition.get_output_symbol(), transition.get_weight())
+
+            for i in range(0, flag_length - 1):
+                for inner_transition in fst.transitions(new_target_state):
+                    new_target_state = inner_transition.get_target_state()
+                    break
+
+            add_transitions.append((state,\
+                hfst.HfstBasicTransition(new_target_state, hfst.EPSILON,\
+                hfst.EPSILON, transition.get_weight())))
+
+    for entry in remove_transitions:
+        fst.remove_transition(entry[0], hfst.HfstBasicTransition(entry[1], entry[2], entry[3], entry[4]))
+
+    for entry in add_transitions:
+        fst.add_transition(entry[0], entry[1])
+
+    return fst
+
+
 class FlagEncoder:
+    """Endode and decode integers (between first_input_int and
+    max_input_int) to flags used in the transducer.
+    All flags are required to have the same length, else this will cause
+    problems in the functions get_flag_states and remove_flags.
+    """
+    # TODO: allow a wider range of integers to encode, for example by using
+    # two consecutive alphabetical characters (26*26 = 676)
+    # TODO: check/ensure that the flag cannot be modified by the
+    # error_transducer randomly
 
     #int_char_dict
     #char_int_dict
@@ -1270,19 +1326,34 @@ def main():
 
     complete_output.n_best(10)
 
-    complete_paths = hfst.HfstTransducer(complete_output).extract_paths(max_number=100, max_cycles=0)
+    complete_output = remove_flags(hfst.HfstBasicTransducer(complete_output), flag_encoder)
+    complete_output = hfst.HfstTransducer(complete_output)
 
-    output_list = []
 
-    for input, outputs in complete_paths.items():
-        for output in outputs:
-            text = output[0].replace('@_EPSILON_SYMBOL_@', '')
-            if not text in output_list:
-                output_list.append(text)
 
-    print('Output List')
-    for item in output_list:
-        print(item)
+    out = hfst.HfstOutputStream(filename='output/' + input_str + '_removed_flags.hfst', hfst_format=False, type=hfst.ImplementationType.TROPICAL_OPENFST_TYPE)
+    out.write(complete_output)
+    out.flush()
+    out.close()
+
+
+
+
+    print_output_paths(complete_output)
+
+    #complete_paths = hfst.HfstTransducer(complete_output).extract_paths(max_number=100, max_cycles=0)
+
+    #output_list = []
+
+    #for input, outputs in complete_paths.items():
+    #    for output in outputs:
+    #        text = output[0].replace('@_EPSILON_SYMBOL_@', '')
+    #        if not text in output_list:
+    #            output_list.append(text)
+
+    #print('Output List')
+    #for item in output_list:
+    #    print(item)
 
 
 
