@@ -1,10 +1,9 @@
 import hfst
 
-import error_transducer as et
-
+import helper
 file_name = 'lang_mod_theta_0_000001.mod'
 
-lm_fst = et.load_transducer(file_name)
+lm_fst = helper.load_transducer(file_name)
 
 lm_fst.substitute((' ', ' '), (hfst.EPSILON, hfst.EPSILON))
 lm_fst.substitute(('_', '_'), (' ', ' '))
