@@ -94,7 +94,7 @@ def compose_and_search(input_str, error_transducer, lexicon_transducer, result_n
         ##result_fst = et.load_transducer('output/' + input_str[1] + '.fst')
         ##result_fst = et.load_transducer(input_str + '.fst')
 
-        print('input_str: ', input_str)
+        #print('input_str: ', input_str)
         composition.compose(input_str.encode())
 
         result_fst = helper.load_transducer('output/' + input_str + '.fst')
@@ -158,13 +158,13 @@ def print_output_paths(basic_fst):
     for input, outputs in complete_paths.items():
         print('%s:' % input.replace('@_EPSILON_SYMBOL_@', '□'))
         for output in outputs:
-            print('%s\t%f' % (output[0].replace('@_EPSILON_SYMBOL_@', ''), output[1]))
+            print('%s\t%f' % (output[0].replace('@_EPSILON_SYMBOL_@', '□'), output[1]))
     print('-')
     complete_paths = hfst.HfstTransducer(basic_fst).extract_paths(max_number=10, max_cycles=0)
     for input, outputs in complete_paths.items():
         print('%s:' % input.replace('@_EPSILON_SYMBOL_@', '□'))
         for output in outputs:
-            print('%s\t%f' % (output[0].replace('@_EPSILON_SYMBOL_@', ''), output[1]))
+            print('%s\t%f' % (output[0].replace('@_EPSILON_SYMBOL_@', '□'), output[1]))
     print('\n')
 
 
@@ -327,6 +327,9 @@ def write_fst(name, fst):
 def combine_results(result_list, window_size, flag_encoder):
     """Takes a list of window results and combines them into a single
     result transducer."""
+
+    #for fst in result_list:
+    #    print_output_paths(fst)
 
     flag_state_dict = {} # flag_string -> list of states (e.g. @N.A@ -> [0])
     final_states = []
