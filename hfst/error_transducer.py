@@ -2,12 +2,104 @@ import hfst
 import math
 import functools
 
-#import error_model2 as error_model
-import process_dta_data as dta
+from nltk import ngrams
+
+from alignment.sequence import Sequence
+import alignment
+alignment.sequence.GAP_ELEMENT = "ε"
+# TODO: this GAP_ELEMENT will cause problems, when greek text is processed
+from alignment.vocabulary import Vocabulary
+from alignment.sequencealigner import SimpleScoring, GlobalSequenceAligner
+
+import helper
+
+
+def get_confusion_dict(gt_dict, raw_dict):
+    """Takes a gt_dict: id -> line and a raw_dict: id -> line and aligns
+    corresponding lines. If the corresponding lines are different, they are
+    split into ngrams (of lengths 1 to 3) and each occurrence of
+    ngram pairs is counted (separately for each ngram length, also if the ngrams
+    are identical).
+    These counts are returned as a list of dicts:
+    [ignored, 1grams, 2grams, 3grams]"""
+
+    corresponding_list = []     # list of tuples (gt_line, raw_line)
+    difference_list = []        # list of tuples (gt_line, raw_line) with gt_line != raw_line
+
+    # divide sentences in those containing OCR errors and the rest
+    for key in gt_dict.keys():
+        raw_line = raw_dict.get(key, None)
+        gt_line = gt_dict[key]
+        if raw_line != None:
+            corresponding = (gt_line, raw_line)
+            corresponding_list.append(corresponding)
+            if raw_line != gt_line:
+                difference_list.append(corresponding)
+
+    # each dict in this list contains counts of character ngram confusions up to
+    # the position in the list (thus, up to 3grams are considered);
+    # position 0 is ignored:
+    # [ignored, 1grams, 2grams, 3grams]
+    confusion_dict = [{}, {}, {}, {}]
+
+    #for (gt_line, raw_line) in difference_list:
+    for (gt_line, raw_line) in difference_list[1:100]:
+
+        #print(gt_line)
+        #print(raw_line)
+
+        # alignment of lines
+
+        a = Sequence(raw_line)
+        b = Sequence(gt_line)
+
+        # create a vocabulary and encode the sequences
+        v = Vocabulary()
+        aEncoded = v.encodeSequence(a)
+        bEncoded = v.encodeSequence(b)
+
+        # create a scoring and align the sequences using global aligner
+        scoring = SimpleScoring(2, -1)
+        aligner = GlobalSequenceAligner(scoring, -2)
+        score, encodeds = aligner.align(aEncoded, bEncoded, backtrace=True)
+
+        for encoded in encodeds:
+            alignment = v.decodeSequenceAlignment(encoded)
+            print(alignment)
+            print('Alignment score:', alignment.score)
+            print('Percent identity:', alignment.percentIdentity())
+
+            if alignment.percentIdentity() < 100:
+
+                firsts = ''.join(list(map(lambda x: x[0], alignment)))
+                seconds = ''.join(list(map(lambda x: x[1], alignment)))
+
+                for n in [1, 2, 3]: # the ngrams which are considered
+
+                    grams_first = list(ngrams(firsts, n))
+                    grams_second = list(ngrams(seconds, n))
+
+                    for i, gram in enumerate(grams_first):
+                        first = ''.join(gram)
+                        second = ''.join(grams_second[i])
+                        #print(first, second)
+
+                        confusion_dict[n][first] = confusion_dict[n].setdefault(first, {})
+                        confusion_dict[n][first][second] = confusion_dict[n][first].setdefault(second, 0) + 1
+
+
+    #for i in [1, 2, 3]:
+    #    print(confusion_dict[i].items())
+
+    return(confusion_dict)
 
 
 def preprocess_confusion_dict(confusion_dict):
-    #"""Convert list of form ((input_string, output_string),
+    """Convert confusion_dict: input_ngram, output_ngram -> count
+    to a list with relative frequencies (in relation to the summed counts
+    of the input ngram, not all input ngrams)."""
+
+    #Convert list of form ((input_string, output_string),
     #count) into list of form (((input_string, output_string),
     #relative_frequency), excluding infrequent errors,
     #maybe smoothing (not implemented)."""
@@ -28,6 +120,11 @@ def preprocess_confusion_dict(confusion_dict):
     #print(epsilon_occ)
 
     # set ε to ε transitions to number of all occurrences minus ε substitutions
+    # (because it models an occurrence of an ε that is not confused with an
+    # existing character; this is needed for correctly calculating the
+    # frequencies of ε to something transitions;
+    # in the resulting (not complete) error transducer, these ε to ε transitions
+    # are not preserved, but only transitions changing the input)
     if epsilon_occ != 0:
         confusion_dict['ε']['ε'] = s - epsilon_occ
 
@@ -43,28 +140,27 @@ def preprocess_confusion_dict(confusion_dict):
         for sub in substitutions:
             frequency_list.append((input_str, sub[0], str(sub[1] / input_str_freq)))
 
-
-    print(sorted(frequency_list, key=lambda x: x[2]))
+    #print(sorted(frequency_list, key=lambda x: x[2]))
     return frequency_list
 
 
 def write_frequency_list(frequency_list, filename):
+    """Write frequency_list to filename (tab-separated)."""
 
     with open(filename, 'w') as f:
         for entry in frequency_list:
             f.write('\t'.join(entry) + '\n')
+    return
 
 
 def read_frequency_list(filename):
+    """Read frequency_list from filename."""
 
     freq_list = []
-
     with open(filename, 'r') as f:
         for line in f:
             instr, outstr, freq = line.strip('\n').split('\t')
-
             freq_list.append((instr, outstr, float(freq)))
-
     return freq_list
 
 
@@ -99,66 +195,56 @@ def transducer_from_list(confusion_list, frequency_class=False, identity_transit
 
 
 def optimize_error_transducer(error_transducer):
+    """Optimize error_transducer by minimizing, removing epsilon und
+    pushing weights to start."""
+
     error_transducer.minimize()
-    #error_transducer.repeat_star()
     error_transducer.remove_epsilons()
     error_transducer.push_weights_to_start()
 
 
-def save_transducer(filename, transducer):
-    ostr = hfst.HfstOutputStream(filename=filename)
-    ostr.write(transducer)
-    ostr.flush()
-    ostr.close()
-
-
-def load_transducer(filename):
-    transducer = None
-    istr = hfst.HfstInputStream(filename)
-    while not istr.is_eof():
-        transducer = istr.read()
-    istr.close()
-
-    return transducer
-
-
 def main():
+    """Read GT and OCR data, align corresponding text lines, count for
+    differing lines ngram pair occurrences for 1grams, 2grams, and 3grams.
+    Write confusions frequencies to confusion_<n>.txt and create simple
+    error_transducer_<n>.hfst."""
 
-    #confusion_dicts = error_model.get_confusion_dicts()
-
-
-    path = '../dta19-reduced/traindata/'
-
-    gt_dict = dta.create_dict(path, 'gt')
+    # read GT data and OCR data (from dta19_reduced)
+    #path = '../dta19-reduced/traindata/'
+    path = '../dta19-reduced/testdata/'
+    gt_dict = helper.create_dict(path, 'gt')
 
     #frak3_dict = create_dict(path, 'deu-frak3')
-    fraktur4_dict = dta.create_dict(path, 'Fraktur4')
+    fraktur4_dict = helper.create_dict(path, 'Fraktur4')
     #foo4_dict = create_dict(path, 'foo4')
 
-    confusion_dicts = dta.get_confusion_dict(gt_dict, fraktur4_dict)
-
-
-
+    # get list of confusion dicts with different context lengths (1 to 3)
+    confusion_dicts = get_confusion_dict(gt_dict, fraktur4_dict)
 
     n = 3
 
-    for n in [1,2,3]:
+    for n in [1,2,3]: # considered ngrams
 
         print('n: ', str(n))
 
+        # convert to relative frequencies
         confusion_list = preprocess_confusion_dict(confusion_dicts[n])
-        write_frequency_list(confusion_list, 'confusion.txt')
-        confusion_list = read_frequency_list('confusion.txt')
+
+        # write confusion to confusion_<n>.txt
+        write_frequency_list(confusion_list, 'confusion_' + str(n) + '.txt')
+        # reading confusion_<n>.txt is necessary because this changes the
+        # data format (convert frequncy from str to float)
+        confusion_list = read_frequency_list('confusion_' + str(n) + '.txt')
+
+        # create (non-complete) error_transducer and optimize it
         error_transducer = transducer_from_list(confusion_list)
         optimize_error_transducer(error_transducer)
 
-        #print(confusion_list)
-
-        save_transducer('error_transducer_' + str(n) + '.hfst', error_transducer)
-        #error_transducer = load_transducer('error_transducer_' + str(n) + '.hfst')
+        # write transducer to file
+        helper.save_transducer('error_transducer_' + str(n) + '.hfst', error_transducer)
+        #error_transducer = helper.load_transducer('error_transducer_' + str(n) + '.hfst')
 
         #print(error_transducer)
-
 
 if __name__ == '__main__':
     main()

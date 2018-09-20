@@ -1,16 +1,26 @@
-import process_dta_data as pdd
-import lexicon_transducer as lt
+import helper
 
 import spacy
 
 from functools import reduce
 
 
+# TODO: improve this to become a comprehensive inter-word ngram model
+# which also models sequences which did not appear in the traning data
+# and has smoothing etc
+
+
 def main():
+    """This is an alternative for the bracket model of punctuation created in process_dta_data.py.
+    Read GT. Count strings between words and split them to left/right part
+    (relative to first space character) and also count complete strings
+    ("middle" part).
+    Needs to be extended to an ngram punctuation model."""
 
     # read gt data
-    path = '../dta19-reduced/traindata/'
-    gt_dict = pdd.create_dict(path, 'gt')
+    #path = '../dta19-reduced/traindata/'
+    path = '../dta19-reduced/testdata/'
+    gt_dict = helper.create_dict(path, 'gt')
 
     nlp = spacy.load('de')
 
@@ -35,10 +45,6 @@ def main():
 
         item = ''
 
-        #print(line)
-        #print(tokens)
-        #print(tokens_pos)
-
         # iterate over line and tokenized line, add punctuation and spaces
         # concatenated to the list of inter-word items
         for char in line:
@@ -47,8 +53,6 @@ def main():
                 item += char
 
             if not token_counter == len(tokens):
-
-                #print(char, token_counter, token_position, len(tokens[token_counter].text))
 
                 if char == tokens[token_counter].text[token_position]:
 
@@ -60,14 +64,8 @@ def main():
 
                     if token_position == len(tokens[token_counter].text) - 1:
 
-                        #print("end of token")
-
-                        #if item != '' and (tokens_pos[token_counter] != 'PUNCT' or tokens[token_counter].text == '—') and char != ' ':
                         if item != '' and tokens_pos[token_counter] != 'PUNCT' and char != ' ':
                             inter_word_items.append(item)
-                            #if len(item.split(' ')) > 2 or len(item) > 3:
-                            #    print(line, item, tokens, tokens_pos)
-                            #print(inter_word_items)
                             item = ''
 
                         token_counter += 1
@@ -87,7 +85,6 @@ def main():
                     inter_word_items.append(item)
                     #print(inter_word_items)
                     item = ''
-
 
         #print(inter_word_items)
         for item in inter_word_items:
@@ -116,31 +113,30 @@ def main():
             dic.pop('')
 
     # print results
-    print("MIDDLE PART")
-    for item in middle_part.items():
-        print(item)
-    print("LEFT PART")
-    for item in left_part.items():
-        print(item)
-    print("RIGHT PART")
-    for item in right_part.items():
-        print(item)
+    #print("MIDDLE PART")
+    #for item in middle_part.items():
+    #    print(item)
+    #print("LEFT PART")
+    #for item in left_part.items():
+    #    print(item)
+    #print("RIGHT PART")
+    #for item in right_part.items():
+    #    print(item)
 
     # convert to relative frequency
-    left_part = pdd.convert_to_relative_freq(left_part)
-    middle_part = pdd.convert_to_relative_freq(middle_part)
-    right_part = pdd.convert_to_relative_freq(right_part)
+    left_part   = helper.convert_to_relative_freq(left_part)
+    middle_part = helper.convert_to_relative_freq(middle_part)
+    right_part  = helper.convert_to_relative_freq(right_part)
 
     # save as list
-    pdd.write_lexicon(left_part, 'left_punctuation.txt')
-    pdd.write_lexicon(middle_part, 'middle_punctuation.txt')
-    pdd.write_lexicon(right_part, 'right_punctuation.txt')
+    helper.write_lexicon(left_part, 'left_punctuation.txt')
+    helper.write_lexicon(middle_part, 'middle_punctuation.txt')
+    helper.write_lexicon(right_part, 'right_punctuation.txt')
 
     # construct transducers
-
-    lt.save_transducer_from_txt('left_punctuation.txt', 'left_punctuation.hfst')
-    lt.save_transducer_from_txt('middle_punctuation.txt', 'middle_punctuation.hfst')
-    lt.save_transducer_from_txt('right_punctuation.txt', 'right_punctuation.hfst')
+    helper.save_transducer_from_txt('left_punctuation.txt', 'left_punctuation.hfst')
+    helper.save_transducer_from_txt('middle_punctuation.txt', 'middle_punctuation.hfst')
+    helper.save_transducer_from_txt('right_punctuation.txt', 'right_punctuation.hfst')
 
 if __name__ == '__main__':
     main()
