@@ -27,6 +27,29 @@ def prepare_input(input_str, window_size, flag_encoder):
 
     splitted = input_str.split(' ')
 
+    # combine neighbouring "words", when one of the "words" is merely
+    # a single punctuation character
+
+    new_splitted = []
+
+    last_word = ''
+
+    for word in splitted:
+        if len(word) == 1 and not word.isalnum():
+            if last_word != '':
+                last_word = last_word + ' ' + word
+
+        elif last_word != '':
+            new_splitted.append(last_word)
+            last_word = word
+        else:
+            last_word = word
+    new_splitted.append(last_word)
+
+    #splitted = new_splitted
+
+    # create input windows
+
     input_list = []
 
     for i in range(0, len(splitted) - window_size + 1):
@@ -94,7 +117,7 @@ def compose_and_search(input_str, error_transducer, lexicon_transducer, result_n
         ##result_fst = et.load_transducer('output/' + input_str[1] + '.fst')
         ##result_fst = et.load_transducer(input_str + '.fst')
 
-        #print('input_str: ', input_str)
+        print('input_str: ', input_str)
         composition.compose(input_str.encode())
 
         result_fst = helper.load_transducer('output/' + input_str + '.fst')
@@ -637,6 +660,78 @@ def load_transducers_bracket(error_file,
     return error_transducer, result_lexicon_transducer
 
 
+
+def load_transducers_preserve_punctuation(error_file,
+    punctuation_file,
+    lexicon_file,
+    flag_encoder,
+    composition_depth=1,
+    words_per_window=3,
+    morphology_file=None):
+    """Load transducers for preserving punctuation, including the
+    punctuation fst (for any punctuation) and lexicon fst.
+    The error model should be unable to change any characters into punctuation
+    characters.
+    Concatenate the transducers to a single fst with words_per_window
+    concatenations of the lexicon."""
+
+    # load transducers
+
+    flag_acceptor = get_flag_acceptor(flag_encoder)
+
+    error_transducer = helper.load_transducer(error_file)
+    error_transducer.substitute((' ', hfst.EPSILON), get_edit_space_transducer(flag_encoder))
+
+    punctuation_transducer = helper.load_transducer(punctuation_file)
+    #punctuation_transducer.optionalize()
+
+    #open_bracket_transducer = helper.load_transducer(open_bracket_file)
+    #open_bracket_transducer.optionalize()
+    #close_bracket_transducer = helper.load_transducer(close_bracket_file)
+    #close_bracket_transducer.optionalize()
+
+    lexicon_transducer = helper.load_transducer(lexicon_file)
+
+    space_transducer = hfst.regex('% :% ')
+
+    # add morphology to lexicon
+
+    if morphology_file != None:
+        morphology_transducer = helper.load_transducer(morphology_file)
+        lexicon_transducer.compose(morphology_transducer)
+
+    # add composed words to lexicon
+
+    if composition_depth > 1:
+
+        connect_composition = hfst.regex('s:s')
+        connect_composition.optionalize()
+
+        optional_lexicon_transducer = lexicon_transducer.copy()
+        optional_lexicon_transducer.optionalize()
+
+        connect_composition.concatenate(optional_lexicon_transducer)
+        connect_composition.repeat_n(composition_depth - 1)
+
+        lexicon_transducer.concatenate(connect_composition)
+
+    # combine transducers to lexicon transducer
+    result_lexicon_transducer = flag_acceptor.copy()
+    #result_lexicon_transducer.concatenate(open_bracket_transducer)
+    result_lexicon_transducer.concatenate(punctuation_transducer)
+    result_lexicon_transducer.concatenate(lexicon_transducer)
+    result_lexicon_transducer.concatenate(punctuation_transducer)
+    #result_lexicon_transducer.concatenate(close_bracket_transducer)
+    result_lexicon_transducer.concatenate(space_transducer)
+    result_lexicon_transducer.optionalize()
+
+    result_lexicon_transducer.repeat_n(words_per_window)
+
+    result_lexicon_transducer.concatenate(flag_acceptor)
+
+    return error_transducer, result_lexicon_transducer
+
+
 def load_transducers_inter_word(error_file,
     lexicon_file,
     punctuation_left_file,
@@ -899,25 +994,43 @@ def main():
     #input_str.strip('\n\u000C')
     #input_str = 'er das Fräulein auf einem ſchönen Zelter unten rider'
     #input_str = 'er das Fräulein auf einem ſchönen Zelter unten rider'
-    input_str = "Philoſophenvon Fndicn dur<h Gricche nland bls"
+    input_str = "Philoſophenvon Fndicn , dur<h Gricche nland bls"
+
+    # TODO: This test sentece has problems removing the flag strings when
+    # using the any_punctuation_no_space model.
+    # Further investigate the causes of the problem and write test(s) for
+    # this.
+    # Using any_punctuation_with_space model, an additional space character
+    # is introduced, leading to two consecutive space characters.
+    # Has the flag string been edited?
+    #input_str = "\ opf. Mir wurde plöblich fo klar, — jo ganz klar, daß"
 
     #window_size = 2
     words_per_window = 3
-    composition_depth = 1
+    composition_depth = 2
 
     result_num = 10
 
+    #error_transducer, lexicon_transducer =\
+    #    load_transducers_bracket(\
+    #    'transducers/max_error_3_context_23_dta.hfst',\
+    #    'transducers/punctuation_transducer_dta.hfst',\
+    #    'transducers/lexicon_transducer_dta.hfst',\
+    #    'transducers/open_bracket_transducer_dta.hfst',\
+    #    'transducers/close_bracket_transducer_dta.hfst',\
+    #    flag_encoder,\
+    #    composition_depth = composition_depth,\
+    #    words_per_window = words_per_window)
+    #    #'transducers/morphology_with_identity.hfst')
+
     error_transducer, lexicon_transducer =\
-        load_transducers_bracket(\
-        'transducers/max_error_3_context_23_dta.hfst',\
-        'transducers/punctuation_transducer_dta.hfst',\
+        load_transducers_preserve_punctuation(\
+        'transducers/preserve_punctuation/max_error_3_context_23.hfst',\
+        'transducers/any_punctuation_no_space.hfst',\
         'transducers/lexicon_transducer_dta.hfst',\
-        'transducers/open_bracket_transducer_dta.hfst',\
-        'transducers/close_bracket_transducer_dta.hfst',\
         flag_encoder,\
         composition_depth = composition_depth,\
         words_per_window = words_per_window)
-        #'transducers/morphology_with_identity.hfst')
 
     #error_transducer, lexicon_transducer =\
     #    load_transducers_inter_word('transducers/max_error_3_context_23_dta.hfst',\
@@ -992,6 +1105,8 @@ def main():
     out.close()
 
     print_output_paths(complete_output)
+
+    return
 
     ## load and apply language model
 

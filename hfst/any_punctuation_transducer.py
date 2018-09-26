@@ -1,39 +1,52 @@
 import hfst
-import lexicon_transducer as lt
-import error_transducer as et
+import helper
+
+
+def punctuation_characters_from_files(file_list):
+
+    chars = set()
+
+    for f in file_list:
+
+        print('Read', f, '...')
+
+        freq_list = helper.read_lexicon(f)
+        for (string1, string2, weight) in freq_list:
+            for char in string1:
+                if char != ' ' and char != '\t':
+                    chars.add(char)
+
+    #chars.add(' ')
+    return chars
 
 def main():
 
-    symbols_per_side = 4
+    file_list = [\
+        "./Fertig 6 DTA/close_bracket.txt",\
+        "./Fertig 6 DTA/dta_punctuation.txt",\
+        "./Fertig 6 DTA/open_bracket.txt" ]
 
-    punctuation_file = 'dta_punctuation_any.txt'
     output_hfst = 'any_punctuation.hfst'
 
-    scaling_transducer = hfst.regex('?::1.0')
+    n = 10
 
-    print('Read', punctuation_file, '...')
-    freq_list = lt.read_lexicon(punctuation_file)
+    punctuation_characters = punctuation_characters_from_files(file_list)
+    print("Punctuation Characters:", punctuation_characters)
+    weighted_list = [(c, c, 0.0) for c in list(punctuation_characters)]
+
     print("Construct Transducer...")
-    transducer = lt.transducer_from_list(freq_list)
+    transducer = helper.transducer_from_list(weighted_list)
     transducer = hfst.HfstTransducer(transducer)
 
-    transducer.compose(scaling_transducer)
+    #scaling_transducer = hfst.regex('?::1.0')
+    #transducer.compose(scaling_transducer)
 
     transducer.optionalize()
+    transducer.repeat_n(n)
+    transducer.minimize()
 
-    result_transducer = transducer.copy()
-
-    for i in range(1, symbols_per_side):
-        print(i)
-        next_symbol = transducer.copy()
-        for j in range(1, i):
-            next_symbol.compose(scaling_transducer)
-        result_transducer.concatenate(next_symbol)
-
-
-
-
-    et.save_transducer(output_hfst, result_transducer)
+    helper.save_transducer(output_hfst, transducer)
+    print("Saved Transducer as", output_hfst)
 
 
 if __name__ == '__main__':

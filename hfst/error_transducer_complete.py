@@ -40,12 +40,14 @@ def main():
         for error_number in error_numbers:
             print('Number of errors:', error_number)
 
-            one_error.repeat_n(error_number)
+            result_transducer = one_error.copy()
 
-            error_transducer = one_error
+            result_transducer.repeat_n(error_number)
+
+            error_transducer = result_transducer
             error_transducer.concatenate(acceptor)
 
-            helper.save_transducer('max_error_' + str(error_number) + '_context_'+ str(context) + '.htsf', error_transducer)
+            helper.save_transducer('max_error_' + str(error_number) + '_context_'+ str(context) + '.hfst', error_transducer)
 
 
 if __name__ == '__main__':

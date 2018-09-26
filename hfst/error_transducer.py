@@ -42,8 +42,8 @@ def get_confusion_dict(gt_dict, raw_dict):
     # [ignored, 1grams, 2grams, 3grams]
     confusion_dict = [{}, {}, {}, {}]
 
-    #for (gt_line, raw_line) in difference_list:
-    for (gt_line, raw_line) in difference_list[1:100]:
+    for (gt_line, raw_line) in difference_list:
+    #for (gt_line, raw_line) in difference_list[1:100]:
 
         #print(gt_line)
         #print(raw_line)
@@ -198,9 +198,59 @@ def optimize_error_transducer(error_transducer):
     """Optimize error_transducer by minimizing, removing epsilon und
     pushing weights to start."""
 
+    # TODO: Weights should not be at the start, but at the actual character
+    # that is modified to ensure that the weights are local.
+
     error_transducer.minimize()
     error_transducer.remove_epsilons()
     error_transducer.push_weights_to_start()
+
+
+def is_punctuation_edit(char1, char2):
+    """Check if an edit of char1 to char2 is a punctuation edit.
+    Edits from punctuation to alphanumerical characters are allowed,
+    because they often occur inside words. Edits from alphanumeric
+    characters to punctuation are not allowed."""
+
+    # TODO: epsilon should not be treated as a normal character to prevent
+    # confusion with the greek character
+
+    # no edit
+    if char1 == char2:
+        return False
+
+    # segmentation errors
+    if char1 in ["ε", " "] and char2 in ["ε", " "]:
+        return False
+
+    # edit to an alphanumeric character
+    if (char2.isalnum() or char2 == "'ͤ") and not char2 in ["ε", " "]:
+        return False
+
+    # alphanumeric to epsilon or space
+    if (char1.isalnum() or char1 == "'ͤ") and char2 in ["ε", " "]:
+        return False
+
+    # all other edits modify output punctuation
+    return True
+
+
+def remove_punctuation_edits(confusion_list):
+    """Take confusion_list and remove all edits that convert some character
+    so a different output punctuation character."""
+
+    new_confusion_list = []
+
+    for input_str, output_str, weight in confusion_list:
+
+        for i, char in enumerate(input_str):
+            if is_punctuation_edit(input_str[i], output_str[i]):
+                break
+        else:
+            new_confusion_list.append((input_str, output_str, weight))
+            #print(input_str, output_str, weight)
+
+    return new_confusion_list
 
 
 def main():
@@ -210,8 +260,8 @@ def main():
     error_transducer_<n>.hfst."""
 
     # read GT data and OCR data (from dta19_reduced)
-    #path = '../dta19-reduced/traindata/'
-    path = '../dta19-reduced/testdata/'
+    path = '../dta19-reduced/traindata/'
+    #path = '../dta19-reduced/testdata/'
     gt_dict = helper.create_dict(path, 'gt')
 
     #frak3_dict = create_dict(path, 'deu-frak3')
@@ -222,6 +272,8 @@ def main():
     confusion_dicts = get_confusion_dict(gt_dict, fraktur4_dict)
 
     n = 3
+
+    preserve_punctuation = True
 
     for n in [1,2,3]: # considered ngrams
 
@@ -235,6 +287,13 @@ def main():
         # reading confusion_<n>.txt is necessary because this changes the
         # data format (convert frequncy from str to float)
         confusion_list = read_frequency_list('confusion_' + str(n) + '.txt')
+
+        print(len(confusion_list))
+
+        if preserve_punctuation:
+            confusion_list = remove_punctuation_edits(confusion_list)
+
+        print(len(confusion_list))
 
         # create (non-complete) error_transducer and optimize it
         error_transducer = transducer_from_list(confusion_list)
