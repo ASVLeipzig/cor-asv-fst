@@ -3,6 +3,8 @@ import helper
 
 
 def punctuation_characters_from_files(file_list):
+    """Read a file_list of files consisting of tab-separted pairs of word/symbol
+    and weight. Construct a set of characters in these files."""
 
     chars = set()
 
@@ -19,7 +21,11 @@ def punctuation_characters_from_files(file_list):
     #chars.add(' ')
     return chars
 
+
 def main():
+    """Construct a transducer accepting up to n consecutive characters out
+    of a given file_list (containing tab-separated word-weight pairs) with
+    weight 0."""
 
     file_list = [\
         "./Fertig 6 DTA/close_bracket.txt",\

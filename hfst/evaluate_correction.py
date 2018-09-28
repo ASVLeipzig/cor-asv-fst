@@ -1,14 +1,20 @@
 from alignment.sequence import Sequence
 import alignment
 alignment.sequence.GAP_ELEMENT = "ε"
+# TODO: GAP_ELEMENT ε can cause problems when handling greek text.
 from alignment.vocabulary import Vocabulary
 from alignment.sequencealigner import SimpleScoring, GlobalSequenceAligner
 
 from functools import reduce
 
-import process_test_data as ptd
+import helper
+
 
 def get_adjusted_distance(l1, l2):
+    """Calculate distance (as the number of edits) of strings l1 and l2 by aligning them.
+    The adjusted length and distance here means that diacritical characters are counted
+    as only one character. Thus, for each occurrence of such a character the
+    length is reduced by 1."""
 
     scoring = SimpleScoring(2, -1)
     aligner = GlobalSequenceAligner(scoring, -2)
@@ -16,16 +22,19 @@ def get_adjusted_distance(l1, l2):
     a = Sequence(l1)
     b = Sequence(l2)
 
-    # Create a vocabulary and encode the sequences.
+    # create a vocabulary and encode the sequences
     vocabulary = Vocabulary()
     source_seq = vocabulary.encodeSequence(a)
     target_seq = vocabulary.encodeSequence(b)
-
 
     _, alignments = aligner.align(source_seq, target_seq, backtrace=True)
     a = vocabulary.decodeSequenceAlignment(alignments[0]) # best result
 
     #print(a)
+
+
+    # the following code ensures that diacritical characters are counted as
+    # a single character (and not as 2)
 
     d = 0 # distance
     length_reduction = max(l1.count(u"\u0364"), l2.count(u"\u0364"))
@@ -35,7 +44,6 @@ def get_adjusted_distance(l1, l2):
 
     source_umlaut = ''
     target_umlaut = ''
-
 
     for source_sym, target_sym in zip(a.first, a.second):
 
@@ -86,103 +94,29 @@ def get_adjusted_distance(l1, l2):
     if source_umlaut or target_umlaut: # previous umlaut error
         d += 1 # one full error
 
-
-
-    #for source_sym, target_sym in zip(a.first, a.second):
-
-    #    if source_sym == target_sym:
-    #        if source_umlaut: # previous source is umlaut non-error
-    #            source_umlaut = False # reset
-    #            d += 1 # one full error (mismatch)
-    #        elif target_umlaut: # previous target is umlaut non-error
-    #            target_umlaut = False # reset
-    #            d += 1 # one full error (mismatch)
-
-    #    else:
-    #        if source_umlaut: # previous source is umlaut non-error
-    #            source_umlaut = False # reset
-    #            if source_sym == alignment.sequence.GAP_ELEMENT and\
-    #               target_sym == u"\u0364": # diacritical combining e
-    #                d += 0.5 # umlaut error (match)
-    #            else:
-    #                d += 2.0 # two full errors (mismatch)
-    #        elif target_umlaut: # previous target is umlaut non-error
-    #            target_umlaut = False # reset
-    #            if target_sym == alignment.sequence.GAP_ELEMENT and\
-    #               source_sym == u"\u0364": # diacritical combining e
-    #                d += 0.5 # umlaut error (match)
-    #            else:
-    #                d += 2.0 # two full errors (mismatch)
-    #        elif umlauts.get(source_sym) == target_sym:
-    #            source_umlaut = True # umlaut non-error
-    #        elif umlauts.get(target_sym) == source_sym:
-    #            target_umlaut = True # umlaut non-error
-    #        else:
-    #            d += 1 # one full error
-
-    #if source_umlaut or target_umlaut: # previous umlaut error
-    #    d += 1 # one full error
-
-
-    #print(len(a), length_reduction)
-
     return d, len(a) - length_reduction # distance and adjusted length
 
 
-
 def get_adjusted_cer(l1, l2):
+    """Calculate the character error rate of l1 and l2."""
 
     distance, length = get_adjusted_distance(l1, l2)
 
+    # each string has 8 filling characters on each side to ensure alignment
     length = length-16
-
     #print(length)
 
     return distance / length, length
 
 
-
-
-def get_percent_identity(alignment):
-
-    a1 = alignment[0]
-    a2 = alignment[1]
-
-    identity_count = 0;
-    char_count = len(a1)
-
-    for i, char in enumerate(a1):
-        if a1[i] == a2[i]:
-            identity_count += 1
-
-    return identity_count / char_count
-
-
-
-def align_lines(l1, l2):
-
-    a = Sequence(l1)
-    b = Sequence(l2)
-
-    # Create a vocabulary and encode the sequences.
-    v = Vocabulary()
-    aEncoded = v.encodeSequence(a)
-    bEncoded = v.encodeSequence(b)
-
-    # Create a scoring and align the sequences using global aligner.
-    scoring = SimpleScoring(2, -1)
-    aligner = GlobalSequenceAligner(scoring, -2)
-    score, encodeds = aligner.align(aEncoded, bEncoded, backtrace=True)
-
-    for encoded in encodeds:
-        alignment = v.decodeSequenceAlignment(encoded)
-        alignment = list(alignment[8:-8])
-        cer = 1 - get_percent_identity(alignment)
-
-    return cer, len(alignment[0])
-
-
 def main():
+    """Read GT files, OCR files, and corrected files for measuring
+    and comparing the character error rate (CER).
+    They are of the form path/<ID>.<suffix>.txt.
+    For GT files, the suffix is gt, OCR suffic is stored in ocr_suffix and
+    the suffix for the files that need to be compared is corrected_suffix.
+    Corresponding (same ID) OCR and corrected lines are aligned to the GT
+    lines and distance and CER are measured."""
 
     #l1 = '########Mit unendlich ſuͤßem Sehnen########'
     #l2 = '########Mit unendlich ſüßem Sehnen########'
@@ -190,47 +124,49 @@ def main():
     #print(get_adjusted_distance(l1, l2))
     #print(get_adjusted_percent_identity(l1, l2))
 
+    # read testdata
     path = '../../dta19-reduced/testdata/'
 
-    fraktur4_dict = ptd.create_dict(path, 'Fraktur4')
-    gt_dict = ptd.create_dict(path, 'gt')
-    corrected_dict = ptd.create_dict(path, 'Fraktur4_corrected')
+    ocr_suffix = 'Fraktur4'
+    corrected_suffix = 'Fraktur4_preserve_2_no_space'
 
-    cer_list_fraktur4 = []
+    ocr_dict = helper.create_dict(path, ocr_suffix)
+    gt_dict = helper.create_dict(path, 'gt')
+    corrected_dict = helper.create_dict(path, corrected_suffix)
+
+    cer_list_ocr = []
     cer_list_corrected = []
 
     for key in corrected_dict.keys():
 
-        fraktur4_line = '########' + fraktur4_dict[key].strip() + '########'
+        # padding characters at each side to ensure alignment
+        ocr_line = '########' + ocr_dict[key].strip() + '########'
         gt_line = '########' + gt_dict[key].strip() + '########'
         corrected_line = '########' +  corrected_dict[key].strip() + '########'
 
-        print('Fraktur4:  ', fraktur4_line)
+        print('OCR:  ', ocr_line)
         print('GT:        ', gt_line)
         print('Corrected: ', corrected_line)
 
-        #cer_fraktur4, fraktur4_len = align_lines(fraktur4_line, gt_line)
-        cer_fraktur4, fraktur4_len = get_adjusted_cer(fraktur4_line, gt_line)
-        #cer_corrected, corrected_len = align_lines(corrected_line, gt_line)
+        # get character error rate of OCR and corrected text
+        cer_ocr, ocr_len = get_adjusted_cer(ocr_line, gt_line)
         cer_corrected, corrected_len = get_adjusted_cer(corrected_line, gt_line)
 
-        print('CER Fraktur4:  ', cer_fraktur4)
+        print('CER OCR:  ', cer_ocr)
         print('CER Corrected: ', cer_corrected)
 
-        cer_list_fraktur4.append((cer_fraktur4, fraktur4_len))
+        cer_list_ocr.append((cer_ocr, ocr_len))
         cer_list_corrected.append((cer_corrected, corrected_len))
 
-    summed_chars_fraktur4 = reduce(lambda x,y: x + y[1], cer_list_fraktur4, 0)
-    summed_weighted_cer_fraktur4 = reduce(lambda x,y: x + (y[0] * (y[1] / summed_chars_fraktur4)), cer_list_fraktur4, 0)
+    summed_chars_ocr = reduce(lambda x,y: x + y[1], cer_list_ocr, 0)
+    summed_weighted_cer_ocr = reduce(lambda x,y: x + (y[0] * (y[1] / summed_chars_ocr)), cer_list_ocr, 0)
 
-    print('Summed CER Fraktur4:  ', summed_weighted_cer_fraktur4)
+    print('Summed CER OCR:  ', summed_weighted_cer_ocr)
 
     summed_chars_corrected = reduce(lambda x,y: x + y[1], cer_list_corrected, 0)
     summed_weighted_cer_corrected = reduce(lambda x,y: x + (y[0] * (y[1] / summed_chars_corrected)), cer_list_corrected, 0)
 
     print('Summed CER Corrected: ', summed_weighted_cer_corrected)
-
-
 
 
 if __name__ == '__main__':
