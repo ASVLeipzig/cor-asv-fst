@@ -46,7 +46,7 @@ def prepare_input(input_str, window_size, flag_encoder):
             last_word = word
     new_splitted.append(last_word)
 
-    #splitted = new_splitted
+    splitted = new_splitted
 
     # create input windows
 
@@ -738,11 +738,20 @@ def load_transducers_inter_word(error_file,
     punctuation_right_file,
     flag_encoder,
     words_per_window = 3,
-    composition_depth = 1):
+    composition_depth = 1,
+    morphology_file=None):
     """Load transducers for using the inter-word model, including the
     lexicon fst, and left/right punctuation fst.
     Concatenate the transducers to a single fst with words_per_window
     concatenations of the lexicon."""
+
+    # TODO: handle flag diacritics; the construction of the lexicon is not
+    # correct anymore; the punctuation_right_transducer as constructed
+    # contains a space character at the beginning which shouldn't be there,
+    # since the space is placed at the end of each window (with no
+    # punctuation characters after that); since this model should be
+    # changed to a complete punctuation ngram model anyway, the corrections
+    # can be made on that occasion
 
     # load transducers
 
@@ -779,6 +788,7 @@ def load_transducers_inter_word(error_file,
 
         lexicon_transducer.concatenate(connect_composition)
 
+
     # combine transducers to lexicon transducer
 
     result_lexicon_transducer = lexicon_transducer.copy()
@@ -793,11 +803,9 @@ def load_transducers_inter_word(error_file,
     output_lexicon = punctuation_right_transducer.copy()
     output_lexicon.concatenate(result_lexicon_transducer)
 
-    # TODO: handle flag diacritics here (concatenate where?)
-
-    #final_result_lexicon_transducer = flag_acceptor.copy()
-    #final_result_lexicon_transducer.concatenate(output_lexicon)
-    #final_result_lexicon_transducer.concatenate(flag_acceptor)
+    final_result_lexicon_transducer = flag_acceptor.copy()
+    final_result_lexicon_transducer.concatenate(output_lexicon)
+    final_result_lexicon_transducer.concatenate(flag_acceptor)
 
     return error_transducer, output_lexicon
 
@@ -1007,30 +1015,33 @@ def main():
 
     #window_size = 2
     words_per_window = 3
-    composition_depth = 2
+    composition_depth = 1
+    # TODO: Concatenating two words of the lexicon to one words should be
+    # more expensive than the sum of both combined words. Else, merge
+    # errors are not corrected.
 
     result_num = 10
 
-    #error_transducer, lexicon_transducer =\
-    #    load_transducers_bracket(\
-    #    'transducers/max_error_3_context_23_dta.hfst',\
-    #    'transducers/punctuation_transducer_dta.hfst',\
-    #    'transducers/lexicon_transducer_dta.hfst',\
-    #    'transducers/open_bracket_transducer_dta.hfst',\
-    #    'transducers/close_bracket_transducer_dta.hfst',\
-    #    flag_encoder,\
-    #    composition_depth = composition_depth,\
-    #    words_per_window = words_per_window)
-    #    #'transducers/morphology_with_identity.hfst')
-
     error_transducer, lexicon_transducer =\
-        load_transducers_preserve_punctuation(\
-        'transducers/preserve_punctuation/max_error_3_context_23.hfst',\
-        'transducers/any_punctuation_no_space.hfst',\
+        load_transducers_bracket(\
+        'transducers/max_error_3_context_23_dta.hfst',\
+        'transducers/punctuation_transducer_dta.hfst',\
         'transducers/lexicon_transducer_dta.hfst',\
+        'transducers/open_bracket_transducer_dta.hfst',\
+        'transducers/close_bracket_transducer_dta.hfst',\
         flag_encoder,\
         composition_depth = composition_depth,\
         words_per_window = words_per_window)
+        #'transducers/morphology_with_identity.hfst')
+
+    #error_transducer, lexicon_transducer =\
+    #    load_transducers_preserve_punctuation(\
+    #    'transducers/preserve_punctuation/max_error_3_context_23.hfst',\
+    #    'transducers/any_punctuation_no_space.hfst',\
+    #    'transducers/lexicon_transducer_dta.hfst',\
+    #    flag_encoder,\
+    #    composition_depth = composition_depth,\
+    #    words_per_window = words_per_window)
 
     #error_transducer, lexicon_transducer =\
     #    load_transducers_inter_word('transducers/max_error_3_context_23_dta.hfst',\

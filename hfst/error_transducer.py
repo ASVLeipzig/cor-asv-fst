@@ -273,7 +273,7 @@ def main():
 
     n = 3
 
-    preserve_punctuation = True
+    preserve_punctuation = False
 
     for n in [1,2,3]: # considered ngrams
 
