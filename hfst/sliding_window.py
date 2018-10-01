@@ -5,6 +5,7 @@ import time
 import math
 import string
 import sys
+import argparse
 
 import helper
 
@@ -173,7 +174,7 @@ def set_transition_weights(fst):
 
 
 def print_output_paths(basic_fst):
-    """Print the shortest path and 10 random paths in the basic_fst
+    """Print the shortest path and five random paths in the basic_fst
     alongside their weight."""
 
     #complete_paths = hfst.HfstTransducer(basic_fst).extract_paths(max_number=5, max_cycles=0)
@@ -182,13 +183,24 @@ def print_output_paths(basic_fst):
         print('%s:' % input.replace('@_EPSILON_SYMBOL_@', '□'))
         for output in outputs:
             print('%s\t%f' % (output[0].replace('@_EPSILON_SYMBOL_@', '□'), output[1]))
-    print('-')
-    complete_paths = hfst.HfstTransducer(basic_fst).extract_paths(max_number=10, max_cycles=0)
+    print('Random paths:')
+    complete_paths = hfst.HfstTransducer(basic_fst).extract_paths(max_number=5, max_cycles=0)
     for input, outputs in complete_paths.items():
         print('%s:' % input.replace('@_EPSILON_SYMBOL_@', '□'))
         for output in outputs:
             print('%s\t%f' % (output[0].replace('@_EPSILON_SYMBOL_@', '□'), output[1]))
     print('\n')
+
+
+def print_shortest_path(basic_fst):
+    """Print the shortest path alongside its weight."""
+
+    #complete_paths = hfst.HfstTransducer(basic_fst).extract_paths(max_number=5, max_cycles=0)
+    complete_paths = hfst.HfstTransducer(basic_fst).extract_shortest_paths()
+    for input, outputs in complete_paths.items():
+        print('%s:' % input.replace('@_EPSILON_SYMBOL_@', '□'))
+        for output in outputs:
+            print('%s\t%f' % (output[0].replace('@_EPSILON_SYMBOL_@', '□'), output[1]))
 
 
 def get_flag_states(transducer, starting_state, flag_list):
@@ -397,8 +409,8 @@ def combine_results(result_list, window_size, flag_encoder):
 
         partial_fst = hfst.HfstBasicTransducer(fst)
 
-        #print('PARTIAL RESULT PATHS')
-        #print_output_paths(partial_fst)
+        print('WINDOW RESULT PATHS')
+        print_shortest_path(partial_fst)
 
         #  remove final states in result fst
         for state in final_states:
@@ -979,6 +991,12 @@ def main():
 
     start = time.time()
 
+    # command line options
+    parser = argparse.ArgumentParser(description='OCR post-correction tool ocrd-cor-asv-fst')
+    parser.add_argument('--input-line', metavar='STRING', dest='input_line', action='store',
+                        default='', help='specify input string')
+    args = parser.parse_args()
+
     flag_encoder = FlagEncoder()
 
     #input_str = "bIeibt"
@@ -1002,9 +1020,9 @@ def main():
     #input_str.strip('\n\u000C')
     #input_str = 'er das Fräulein auf einem ſchönen Zelter unten rider'
     #input_str = 'er das Fräulein auf einem ſchönen Zelter unten rider'
-    input_str = "Philoſophenvon Fndicn , dur<h Gricche nland bls"
+    input_str = "Philoſophenvon Fndicn dur<h Gricche nland bis"
 
-    # TODO: This test sentece has problems removing the flag strings when
+    # TODO: This test sentence has problems removing the flag strings when
     # using the any_punctuation_no_space model.
     # Further investigate the causes of the problem and write test(s) for
     # this.
@@ -1012,6 +1030,12 @@ def main():
     # is introduced, leading to two consecutive space characters.
     # Has the flag string been edited?
     #input_str = "\ opf. Mir wurde plöblich fo klar, — jo ganz klar, daß"
+
+
+    # set input_str to command-line argument if given
+    if args.input_line != '':
+        input_str = args.input_line
+
 
     #window_size = 2
     words_per_window = 3
@@ -1101,7 +1125,7 @@ def main():
     out.flush()
     out.close()
 
-    print('Complete Output')
+    print('COMPLETE OUTPUT')
     print_output_paths(complete_output)
 
     #complete_output.n_best(10)
@@ -1115,6 +1139,7 @@ def main():
     out.flush()
     out.close()
 
+    print('COMPLETE OUTPUT NO FLAGS')
     print_output_paths(complete_output)
 
     return
