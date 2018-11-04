@@ -1,5 +1,7 @@
 from os import listdir
 
+import argparse
+import multiprocessing as mp
 import hfst
 
 import sliding_window as sw
@@ -8,23 +10,29 @@ import helper
 
 
 def main():
-    """Read OCR files of the form path/<ID>.<suffix>.txt.
-    Each file contains one line of text.
+    """
+    Read OCR files following the path scheme <directory>/<ID>.<suffix>,
+    where each file contains one line of text.
     Correct each line and write output files in same directory with suffix
-    specified in output_suffix."""
+    specified in output_suffix.
+    """
 
+    parser = argparse.ArgumentParser(description='OCR post-correction batch tool ocrd-cor-asv-fst')
+    parser.add_argument('directory', metavar='PATH', help='directory for input and output files')
+    parser.add_argument('-I', '--input-suffix', metavar='ISUF', type=str, default='txt', help='input (OCR) filenames suffix')
+    parser.add_argument('-O', '--output-suffix', metavar='OSUF', type=str, default='cor-asv-fst.txt', help='output (corrected) filenames suffix')
+    parser.add_argument('-W', '--words-per-window', metavar='WORDS', type=int, default=3, help='maximum number of words in one window')
+    parser.add_argument('-R', '--result-num', metavar='RESULTS', type=int, default=10, help='result paths per window')
+    parser.add_argument('-D', '--composition-depth', metavar='DEPTH', type=int, default=2, help='number of lexicon words that can be concatenated')
+    args = parser.parse_args()
+    
     # prepare transducers
-
-    words_per_window = 3 # maximum number of words in one window
-    result_num = 10 # result paths per window
-    composition_depth = 2 # number of lexicon words that can be concatenated
 
     flag_encoder = sw.FlagEncoder()
 
-    ocr_suffix = 'Fraktur4' # suffix of input files
-    output_suffix = 'Fraktur4_preserve_2_no_space' # suffix of output files
-
-    complete_output_suffix = '.' + output_suffix + '.txt'
+    #ocr_suffix = 'Fraktur4' # suffix of input files
+    #output_suffix = ocr_suffix + '_preserve_2_no_space' # suffix of output files
+    #complete_output_suffix = '.' + output_suffix + '.txt'
 
     # load and construct transducers
 
@@ -45,12 +53,12 @@ def main():
 
     error_transducer, lexicon_transducer =\
         sw.load_transducers_preserve_punctuation(\
-        'transducers/preserve_punctuation/max_error_3_context_23.hfst',\
-        'transducers/any_punctuation_no_space.hfst',\
-        'transducers/lexicon_transducer_dta.hfst',\
+        'fst/preserve_punctuation_max_error_3_context_23.hfst',\
+        'fst/any_punctuation_no_space.hfst',\
+        'fst/lexicon_transducer_dta.hfst',\
         flag_encoder,\
-        composition_depth = composition_depth,\
-        words_per_window = words_per_window)
+        composition_depth = args.composition_depth,\
+        words_per_window = args.words_per_window)
 
     # prepare Composition Object
 
@@ -65,15 +73,16 @@ def main():
         out.flush()
         out.close()
 
-    composition = pyComposition(error_filename_b, lexicon_filename_b, result_num)
+    composition = pyComposition(error_filename_b, lexicon_filename_b, args.result_num)
 
     # read and process test data
 
-    path = '../../dta19-reduced/testdata/'
+    #path = '../../../daten/dta19-reduced/testdata/'
 
-    gt_dict = helper.create_dict(path, 'gt')
-    ocr_dict = helper.create_dict(path, 'Fraktur4')
+    gt_dict = helper.create_dict(args.directory + "/", 'gt.txt')
+    ocr_dict = helper.create_dict(args.directory + "/", args.input_suffix)
 
+    
     for key, value in list(ocr_dict.items()):#[10:20]:
 
         input_str = value
@@ -82,7 +91,7 @@ def main():
         print(value)
         print(gt_dict[key])
 
-        complete_output = sw.window_size_1_2(input_str, error_transducer, lexicon_transducer, flag_encoder, result_num, composition)
+        complete_output = sw.window_size_1_2(input_str, error_transducer, lexicon_transducer, flag_encoder, args.result_num, composition)
         complete_output.n_best(1)
         complete_output = sw.remove_flags(hfst.HfstBasicTransducer(complete_output), flag_encoder)
         complete_output = hfst.HfstTransducer(complete_output)
@@ -92,7 +101,7 @@ def main():
         print(output_str)
         print()
 
-        with open(path + key + complete_output_suffix, 'w') as f:
+        with open(args.directory + "/" + key + "." + args.output_suffix, 'w') as f:
             f.write(output_str)
 
     return
