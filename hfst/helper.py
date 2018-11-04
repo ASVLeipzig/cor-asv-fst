@@ -24,29 +24,30 @@ def load_transducer(filename):
     return transducer
 
 
-def get_txt_files(directory, model):
-    """Gives all files of form <file_id>.<model>.txt in given directory."""
+def get_filenames(directory, suffix):
+    """Return all filenames following the scheme <file_id>.<suffix> in the given directory."""
 
-    return (f for f in listdir(directory) if f.endswith('.' + model + '.txt'))
+    return (f for f in listdir(directory) if f.endswith('.' + suffix))
 
 
-def get_content(directory, file_generator):
-    """Yields content in files according to given file_generator in
-    directory."""
+def generate_content(directory, filenames):
+    """Generate tuples of file basename and file content string for given filenames and directory."""
 
-    for x in file_generator:
+    for x in filenames:
         with open(directory + x) as f:
-            yield [x.split('.')[0], f.read().strip()]
+            yield (x.split('.')[0], f.read().strip())
 
 
-def create_dict(path, model):
-    """Reads files at the given path with schema <file_id>.<model>.txt and writes
-    them into a dict: file_id -> line (each file is supposed to consist of one
-    line of text)."""
+def create_dict(directory, suffix):
+    """
+    Read files at the given directory path following the filename scheme 
+    <file_id>.<suffix> and write them into a dict: file_id -> string content
+    (each file is supposed to consist of one line of text).
+    """
 
     result_dict = {}
-    files = get_txt_files(path, model)
-    content = get_content(path, files)
+    filenames = get_filenames(directory, suffix)
+    content = generate_content(directory, filenames)
     for file_id, line in content:
         result_dict[file_id] = line
     return result_dict

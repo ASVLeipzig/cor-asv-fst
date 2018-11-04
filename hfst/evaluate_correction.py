@@ -1,11 +1,12 @@
+import argparse
+
 from alignment.sequence import Sequence
 import alignment
-alignment.sequence.GAP_ELEMENT = "ε"
-# TODO: GAP_ELEMENT ε can cause problems when handling greek text.
+alignment.sequence.GAP_ELEMENT = 0 #"ε"
 from alignment.vocabulary import Vocabulary
-from alignment.sequencealigner import SimpleScoring, GlobalSequenceAligner
+from alignment.sequencealigner import SimpleScoring, StrictGlobalSequenceAligner
 
-from functools import reduce
+import editdistance # faster (and no memory/stack problems), but no customized distance metrics
 
 import helper
 
@@ -17,7 +18,7 @@ def get_adjusted_distance(l1, l2):
     length is reduced by 1."""
 
     scoring = SimpleScoring(2, -1)
-    aligner = GlobalSequenceAligner(scoring, -2)
+    aligner = StrictGlobalSequenceAligner(scoring, -2)
 
     a = Sequence(l1)
     b = Sequence(l2)
@@ -39,8 +40,8 @@ def get_adjusted_distance(l1, l2):
     d = 0 # distance
     length_reduction = max(l1.count(u"\u0364"), l2.count(u"\u0364"))
 
-    #umlauts = {u"ä": "a", u"ö": "o", u"ü": "u"} # for example
-    umlauts = {"a": u"ä", "o": u"ö", "u": u"ü"} # for example
+    umlauts = {u"ä": "a", u"ö": "o", u"ü": "u"} # for example
+    #umlauts = {}
 
     source_umlaut = ''
     target_umlaut = ''
@@ -52,121 +53,106 @@ def get_adjusted_distance(l1, l2):
         if source_sym == target_sym:
             if source_umlaut: # previous source is umlaut non-error
                 source_umlaut = False # reset
-                d += 1 # one full error (mismatch)
+                d += 1.0 # one full error (mismatch)
             elif target_umlaut: # previous target is umlaut non-error
                 target_umlaut = False # reset
-                d += 1 # one full error (mismatch)
-
+                d += 1.0 # one full error (mismatch)
         else:
             if source_umlaut: # previous source is umlaut non-error
-                if source_sym == u"\u0364" and\
-                   target_sym == umlauts.get(source_umlaut): # diacritical combining e
-                    d += 1.0 # umlaut error (match)
-                elif source_sym == u"\u0364":
-                    d += 1.0 # one error, because diacritical and other character (mismatch)
+                source_umlaut = False # reset
+                if (source_sym == alignment.sequence.GAP_ELEMENT and
+                    target_sym == u"\u0364"): # diacritical combining e
+                    d += 1.0 # umlaut error (umlaut match)
+                    #print('source umlaut match', a)
                 else:
                     d += 2.0 # two full errors (mismatch)
-                source_umlaut = '' # reset
-
             elif target_umlaut: # previous target is umlaut non-error
-                if target_sym == u"\u0364" and\
-                   source_sym == umlauts.get(target_umlaut): # diacritical combining e
-                    d += 1.0 # umlaut error (match)
-                elif target_sym == u"\u0364":
-                    d += 1.0 # one error, because diacritical and other character (mismatch)
+                target_umlaut = False # reset
+                if (target_sym == alignment.sequence.GAP_ELEMENT and
+                    source_sym == u"\u0364"): # diacritical combining e
+                    d += 1.0 # umlaut error (umlaut match)
+                    #print('target umlaut match', a)
                 else:
                     d += 2.0 # two full errors (mismatch)
-                target_umlaut = '' # reset
-
-            elif source_sym == alignment.sequence.GAP_ELEMENT and\
-                target_sym in list(umlauts.keys()):
-                target_umlaut = target_sym # umlaut non-error
-                #print('set target_umlaut')
-
-            elif target_sym == alignment.sequence.GAP_ELEMENT and\
-                source_sym in list(umlauts.keys()):
-                source_umlaut = source_sym # umlaut non-error
-                #print('set source_umlaut')
-
+            elif source_sym in umlauts and umlauts[source_sym] == target_sym:
+                source_umlaut = True # umlaut non-error
+            elif target_sym in umlauts and umlauts[target_sym] == source_sym:
+                target_umlaut = True # umlaut non-error
             else:
-                d += 1 # one full error
-
+                d += 1.0 # one full error (non-umlaut mismatch)
     if source_umlaut or target_umlaut: # previous umlaut error
-        d += 1 # one full error
+        d += 1.0 # one full error
 
-    return d, len(a) - length_reduction # distance and adjusted length
-
-
-def get_adjusted_cer(l1, l2):
-    """Calculate the character error rate of l1 and l2."""
-
-    distance, length = get_adjusted_distance(l1, l2)
-
-    # each string has 8 filling characters on each side to ensure alignment
-    length = length-16
-    #print(length)
-
-    return distance / length, length
+    return d, len(l2) # d, len(a) - length_reduction # distance and adjusted length
 
 
 def main():
-    """Read GT files, OCR files, and corrected files for measuring
-    and comparing the character error rate (CER).
-    They are of the form path/<ID>.<suffix>.txt.
-    For GT files, the suffix is gt, OCR suffic is stored in ocr_suffix and
-    the suffix for the files that need to be compared is corrected_suffix.
-    Corresponding (same ID) OCR and corrected lines are aligned to the GT
-    lines and distance and CER are measured."""
-
+    """
+    Read GT files, OCR files, and corrected files 
+    following the path scheme <directory>/<ID>.<suffix>,
+    where each file contains one line of text, 
+    for measuring and comparing the character error rate (CER).
+    
+    For GT files, the suffix is fixed as 'gt.txt'.
+    For OCR files, the suffix is given in <input_suffix>.
+    For corrected files, the suffix is given in <output_suffix>.
+    
+    Align corresponding lines (with same ID) from GT, OCR, and correction,
+    and measure their edit distance and CER.
+    """
+    
+    parser = argparse.ArgumentParser(description='OCR post-correction batch evaluation ocrd-cor-asv-fst')
+    parser.add_argument('directory', metavar='PATH', help='directory for GT, input, and output files')
+    parser.add_argument('-I', '--input-suffix', metavar='ISUF', type=str, default='txt', help='input (OCR) filenames suffix')
+    parser.add_argument('-O', '--output-suffix', metavar='OSUF', type=str, default='cor-asv-fst.txt', help='output (corrected) filenames suffix')
+    args = parser.parse_args()
+    
     #l1 = '########Mit unendlich ſuͤßem Sehnen########'
     #l2 = '########Mit unendlich ſüßem Sehnen########'
     #print(align_lines(l1, l2))
     #print(get_adjusted_distance(l1, l2))
     #print(get_adjusted_percent_identity(l1, l2))
-
+    
     # read testdata
-    path = '../../dta19-reduced/testdata/'
-
-    ocr_suffix = 'Fraktur4'
-    corrected_suffix = 'Fraktur4_preserve_2_no_space'
-
-    ocr_dict = helper.create_dict(path, ocr_suffix)
-    gt_dict = helper.create_dict(path, 'gt')
-    corrected_dict = helper.create_dict(path, corrected_suffix)
-
-    cer_list_ocr = []
-    cer_list_corrected = []
-
-    for key in corrected_dict.keys():
-
+    #path = '../../../daten/dta19-reduced/testdata/'
+    #ocr_suffix = 'Fraktur4'
+    #corrected_suffix = ocr_suffix + '_preserve_2_no_space'
+    
+    ocr_dict = helper.create_dict(args.directory + "/", args.input_suffix)
+    gt_dict = helper.create_dict(args.directory + "/", 'gt.txt')
+    cor_dict = helper.create_dict(args.directory + "/", args.output_suffix)
+    
+    edits_ocr, edits_cor = 0, 0
+    len_ocr, len_cor = 0,0
+    
+    for key in cor_dict.keys():
+        
         # padding characters at each side to ensure alignment
-        ocr_line = '########' + ocr_dict[key].strip() + '########'
-        gt_line = '########' + gt_dict[key].strip() + '########'
-        corrected_line = '########' +  corrected_dict[key].strip() + '########'
-
-        print('OCR:  ', ocr_line)
+        #gt_line = '########' + gt_dict[key].strip() + '########'
+        #ocr_line = '########' + ocr_dict[key].strip() + '########'
+        #cor_line = '########' +  cor_dict[key].strip() + '########'
+        gt_line = gt_dict[key].strip()
+        ocr_line = ocr_dict[key].strip()
+        cor_line = cor_dict[key].strip()
+        
+        print('OCR:       ', ocr_line)
+        print('Corrected: ', cor_line)
         print('GT:        ', gt_line)
-        print('Corrected: ', corrected_line)
-
+        
         # get character error rate of OCR and corrected text
-        cer_ocr, ocr_len = get_adjusted_cer(ocr_line, gt_line)
-        cer_corrected, corrected_len = get_adjusted_cer(corrected_line, gt_line)
-
-        print('CER OCR:  ', cer_ocr)
-        print('CER Corrected: ', cer_corrected)
-
-        cer_list_ocr.append((cer_ocr, ocr_len))
-        cer_list_corrected.append((cer_corrected, corrected_len))
-
-    summed_chars_ocr = reduce(lambda x,y: x + y[1], cer_list_ocr, 0)
-    summed_weighted_cer_ocr = reduce(lambda x,y: x + (y[0] * (y[1] / summed_chars_ocr)), cer_list_ocr, 0)
-
-    print('Summed CER OCR:  ', summed_weighted_cer_ocr)
-
-    summed_chars_corrected = reduce(lambda x,y: x + y[1], cer_list_corrected, 0)
-    summed_weighted_cer_corrected = reduce(lambda x,y: x + (y[0] * (y[1] / summed_chars_corrected)), cer_list_corrected, 0)
-
-    print('Summed CER Corrected: ', summed_weighted_cer_corrected)
+        edits_ocr_line, len_ocr_line = get_adjusted_distance(ocr_line, gt_line) #editdistance.eval(ocr_line, gt_line), len(gt_line)
+        edits_cor_line, len_cor_line = get_adjusted_distance(cor_line, gt_line) #editdistance.eval(cor_line, gt_line), len(gt_line)
+        print('CER OCR:       ', edits_ocr_line / len_ocr_line)
+        print('CER Corrected: ', edits_cor_line / len_cor_line)
+        
+        edits_ocr += edits_ocr_line
+        edits_cor += edits_cor_line
+        len_ocr += len_ocr_line
+        len_cor += len_cor_line
+        
+    
+    print('Aggregate CER OCR:       ', edits_ocr / len_ocr)
+    print('Aggregate CER Corrected: ', edits_cor / len_cor)
 
 
 if __name__ == '__main__':
