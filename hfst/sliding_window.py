@@ -522,11 +522,13 @@ def create_result_transducer(input_str, window_size, words_per_window, error_tra
 
     #complete_output = combine_results(output_list, window_size)
     #complete_output = remove_redundant_paths(complete_output)
-
-    complete_output = combine_results(output_list, window_size, flag_encoder)
-
-    complete_output = hfst.HfstTransducer(complete_output)
-
+    
+    if output_list:
+        complete_output = combine_results(output_list, window_size, flag_encoder)
+        complete_output = hfst.HfstTransducer(complete_output)
+    else:
+        complete_output = hfst.HfstTransducer()
+    
     after_combination = time.time()
 
     print('Composition Time: ', after_composition - start)
