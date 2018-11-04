@@ -1,0 +1,6 @@
+cython
+hfst
+six
+numpy
+alignment
+editdistance
