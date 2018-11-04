@@ -8,6 +8,12 @@ import sliding_window as sw
 from composition import pyComposition
 import helper
 
+# globals (for painless cow-semantic shared memory fork-based multiprocessing)
+error_transducer = None
+lexicon_transducer = None
+flag_encoder = None
+composition = None
+args = None
 
 def main():
     """
@@ -17,6 +23,8 @@ def main():
     specified in output_suffix.
     """
 
+    global error_transducer, lexicon_transducer, flag_encoder, args, composition
+    
     parser = argparse.ArgumentParser(description='OCR post-correction batch tool ocrd-cor-asv-fst')
     parser.add_argument('directory', metavar='PATH', help='directory for input and output files')
     parser.add_argument('-I', '--input-suffix', metavar='ISUF', type=str, default='txt', help='input (OCR) filenames suffix')
@@ -24,6 +32,7 @@ def main():
     parser.add_argument('-W', '--words-per-window', metavar='WORDS', type=int, default=3, help='maximum number of words in one window')
     parser.add_argument('-R', '--result-num', metavar='RESULTS', type=int, default=10, help='result paths per window')
     parser.add_argument('-D', '--composition-depth', metavar='DEPTH', type=int, default=2, help='number of lexicon words that can be concatenated')
+    parser.add_argument('-Q', '--processes', metavar='NPROC', type=int, default=1, help='number of processes to use in parallel')
     args = parser.parse_args()
     
     # prepare transducers
@@ -81,31 +90,35 @@ def main():
 
     gt_dict = helper.create_dict(args.directory + "/", 'gt.txt')
     ocr_dict = helper.create_dict(args.directory + "/", args.input_suffix)
-
     
-    for key, value in list(ocr_dict.items()):#[10:20]:
-
-        input_str = value
-
-        print(key)
-        print(value)
-        print(gt_dict[key])
-
-        complete_output = sw.window_size_1_2(input_str, error_transducer, lexicon_transducer, flag_encoder, args.result_num, composition)
-        complete_output.n_best(1)
-        complete_output = sw.remove_flags(hfst.HfstBasicTransducer(complete_output), flag_encoder)
-        complete_output = hfst.HfstTransducer(complete_output)
-        complete_paths = hfst.HfstTransducer(complete_output).extract_paths(max_number=1, max_cycles=0)
-        output_str = list(complete_paths.items())[0][1][0][0].replace('@_EPSILON_SYMBOL_@', '')
-
+    results = []
+    with mp.Pool(processes=args.processes) as pool:
+        params = list(ocr_dict.items()) #[10:20]
+        results = pool.starmap(process, params)
+        
+    for basename, input_str, output_str in results:
+        print(basename)
+        print(input_str)
         print(output_str)
+        print(gt_dict[basename])
         print()
-
-        with open(args.directory + "/" + key + "." + args.output_suffix, 'w') as f:
-            f.write(output_str)
-
+    
     return
 
+# needs to be global for mp:
+def process(basename, input_str):
+    global error_transducer, lexicon_transducer, flag_encoder, args, composition
+    complete_output = sw.window_size_1_2(input_str, error_transducer, lexicon_transducer, flag_encoder, args.result_num, composition)
+    complete_output.n_best(1)
+    complete_output = sw.remove_flags(hfst.HfstBasicTransducer(complete_output), flag_encoder)
+    complete_output = hfst.HfstTransducer(complete_output)
+    complete_paths = hfst.HfstTransducer(complete_output).extract_paths(max_number=1, max_cycles=0)
+    output_str = list(complete_paths.items())[0][1][0][0].replace('@_EPSILON_SYMBOL_@', '')
+    
+    with open(args.directory + "/" + basename + "." + args.output_suffix, 'w') as f:
+        f.write(output_str)
+    
+    return basename, input_str, output_str
 
 if __name__ == '__main__':
     main()
