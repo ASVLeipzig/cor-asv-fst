@@ -29,6 +29,7 @@ def main():
     parser.add_argument('directory', metavar='PATH', help='directory for input and output files')
     parser.add_argument('-I', '--input-suffix', metavar='ISUF', type=str, default='txt', help='input (OCR) filenames suffix')
     parser.add_argument('-O', '--output-suffix', metavar='OSUF', type=str, default='cor-asv-fst.txt', help='output (corrected) filenames suffix')
+    parser.add_argument('-P', '--punctuation', metavar='MODEL', type=str, choices=['bracket', 'lm', 'preserve'], default='bracket', help='how to model punctuation between words (bracketing rules, inter-word language model, or keep unchanged)')
     parser.add_argument('-W', '--words-per-window', metavar='WORDS', type=int, default=3, help='maximum number of words in one window')
     parser.add_argument('-R', '--result-num', metavar='RESULTS', type=int, default=10, help='result paths per window')
     parser.add_argument('-D', '--composition-depth', metavar='DEPTH', type=int, default=2, help='number of lexicon words that can be concatenated')
@@ -45,30 +46,40 @@ def main():
 
     # load and construct transducers
 
-    # bracket model
-
-    #error_transducer, lexicon_transducer =\
-    #    load_transducers_bracket(\
-    #    'transducers/max_error_3_context_23_dta.hfst',\
-    #    'transducers/punctuation_transducer_dta.hfst',\
-    #    'transducers/lexicon_transducer_dta.hfst',\
-    #    'transducers/open_bracket_transducer_dta.hfst',\
-    #    'transducers/close_bracket_transducer_dta.hfst',\
-    #    flag_encoder,\
-    #    composition_depth = composition_depth,\
-    #    words_per_window = words_per_window)
-
-    # no punctuation changes
-
-    error_transducer, lexicon_transducer =\
-        sw.load_transducers_preserve_punctuation(\
-        'fst/preserve_punctuation_max_error_3_context_23.hfst',\
-        'fst/any_punctuation_no_space.hfst',\
-        'fst/lexicon_transducer_dta.hfst',\
-        flag_encoder,\
-        composition_depth = args.composition_depth,\
-        words_per_window = args.words_per_window)
-
+    if args.punctuation == 'bracket':
+        ## bracketing rules
+        error_transducer, lexicon_transducer = sw.load_transducers_bracket(
+            'fst/max_error_3_context_23_dta.hfst',
+            'fst/punctuation_transducer_dta.hfst',
+            'fst/lexicon_transducer_dta.hfst',
+            'fst/open_bracket_transducer_dta.hfst',
+            'fst/close_bracket_transducer_dta.hfst',
+            flag_encoder,
+            composition_depth=args.composition_depth,
+            words_per_window=args.words_per_window)
+        
+    elif args.punctuation == 'lm':
+        ## inter-word language model
+        error_transducer, lexicon_transducer = sw.load_transducers_inter_word(
+            'fst/max_error_3_context_23_dta.hfst',
+            'fst/lexicon_transducer_dta.hfst',
+            'fst/left_punctuation.hfst',
+            'fst/right_punctuation.hfst',
+            flag_encoder,
+            words_per_window=args.words_per_window,
+            composition_depth=args.composition_depth)
+        
+    elif args.punctuation == 'preserve':
+        ## no punctuation changes
+        error_transducer, lexicon_transducer = sw.load_transducers_preserve_punctuation(
+            'fst/preserve_punctuation_max_error_3_context_23.hfst',
+            'fst/any_punctuation_no_space.hfst',
+            'fst/lexicon_transducer_dta.hfst',
+            flag_encoder,
+            composition_depth=args.composition_depth,
+            words_per_window=args.words_per_window)
+        
+    
     # prepare Composition Object
 
     error_filename = 'error.ofst'

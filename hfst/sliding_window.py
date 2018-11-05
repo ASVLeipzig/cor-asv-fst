@@ -769,6 +769,8 @@ def load_transducers_inter_word(error_file,
 
     # load transducers
 
+    flag_acceptor = get_flag_acceptor(flag_encoder)
+    
     error_transducer = helper.load_transducer(error_file)
 
     punctuation_left_transducer = helper.load_transducer(punctuation_left_file)
