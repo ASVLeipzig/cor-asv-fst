@@ -1,5 +1,4 @@
 import hfst
-import libhfst
 
 import time
 import math
@@ -7,9 +6,8 @@ import string
 import sys
 import argparse
 
-import helper
-
 from composition import pyComposition
+import helper
 
 
 def create_input_transducer(input_str):
@@ -39,7 +37,8 @@ def prepare_input(input_str, window_size, flag_encoder):
         if len(word) == 1 and not word.isalnum():
             if last_word != '':
                 last_word = last_word + ' ' + word
-
+            else:
+                last_word = word
         elif last_word != '':
             new_splitted.append(last_word)
             last_word = word
@@ -53,7 +52,7 @@ def prepare_input(input_str, window_size, flag_encoder):
 
     input_list = []
 
-    for i in range(0, len(splitted) - window_size + 1):
+    for i in range(0, max(1, len(splitted) - window_size + 1)):
         single_input = splitted[i:i + window_size]
 
         single_input_with_diacritics = flag_encoder.encode(i)
@@ -378,7 +377,11 @@ def combine_results(result_list, window_size, flag_encoder):
     write_fst('starting_fst', starting_fst)
 
     result_fst = hfst.HfstBasicTransducer(starting_fst)
-
+    
+    starting_fst.output_project()
+    print('WINDOW RESULT PATHS')
+    print_shortest_path(starting_fst)
+    
     flag_state_dict, final_states, predecessor_dict = get_flag_states(result_fst, 0, flag_encoder.flag_list)
 
     #print('flag states', flag_state_dict.items())
@@ -523,11 +526,8 @@ def create_result_transducer(input_str, window_size, words_per_window, error_tra
     #complete_output = combine_results(output_list, window_size)
     #complete_output = remove_redundant_paths(complete_output)
     
-    if output_list:
-        complete_output = combine_results(output_list, window_size, flag_encoder)
-        complete_output = hfst.HfstTransducer(complete_output)
-    else:
-        complete_output = hfst.HfstTransducer()
+    complete_output = combine_results(output_list, window_size, flag_encoder)
+    complete_output = hfst.HfstTransducer(complete_output)
     
     after_combination = time.time()
 
