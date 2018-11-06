@@ -154,7 +154,7 @@ def compose_and_search(input_str, error_transducer, lexicon_transducer, result_n
     #result_fst.minimize()
 
     # disjunct result with input_fst, but with high transition weights
-    input_fst = set_transition_weights(input_fst)
+    input_fst = set_transition_weights(input_fst) # acts as a rejection threshold
     result_fst.disjunct(input_fst)
 
     result_fst.remove_epsilons()
@@ -168,7 +168,7 @@ def set_transition_weights(fst):
     basic_fst = hfst.HfstBasicTransducer(fst)
     for state in basic_fst.states():
         for transition in basic_fst.transitions(state):
-            transition.set_weight(10.0)
+            transition.set_weight(1.5) # 10.0 # hyperparameter!
     return hfst.HfstTransducer(basic_fst)
 
 
@@ -996,9 +996,12 @@ def main():
     start = time.time()
 
     # command line options
-    parser = argparse.ArgumentParser(description='OCR post-correction tool ocrd-cor-asv-fst')
-    parser.add_argument('--input-line', metavar='STRING', dest='input_line', action='store',
-                        default='', help='specify input string')
+    parser = argparse.ArgumentParser(description='OCR post-correction ocrd-cor-asv-fst one-shot tool')
+    parser.add_argument('inputline', metavar='STRING', default=u"Philoſophenvon Fndicn dur<h Gricche nland bis", help='specify input string')
+    parser.add_argument('-P', '--punctuation', metavar='MODEL', type=str, choices=['bracket', 'lm', 'preserve'], default='bracket', help='how to model punctuation between words (bracketing rules, inter-word language model, or keep unchanged)')
+    parser.add_argument('-W', '--words-per-window', metavar='WORDS', type=int, default=3, help='maximum number of words in one window')
+    parser.add_argument('-R', '--result-num', metavar='RESULTS', type=int, default=10, help='result paths per window')
+    parser.add_argument('-D', '--composition-depth', metavar='DEPTH', type=int, default=1, help='number of lexicon words that can be concatenated')
     args = parser.parse_args()
 
     flag_encoder = FlagEncoder()
@@ -1024,7 +1027,7 @@ def main():
     #input_str.strip('\n\u000C')
     #input_str = 'er das Fräulein auf einem ſchönen Zelter unten rider'
     #input_str = 'er das Fräulein auf einem ſchönen Zelter unten rider'
-    input_str = "Philoſophenvon Fndicn dur<h Gricche nland bis"
+    #input_str = "Philoſophenvon Fndicn dur<h Gricche nland bis"
 
     # TODO: This test sentence has problems removing the flag strings when
     # using the any_punctuation_no_space model.
@@ -1037,48 +1040,55 @@ def main():
 
 
     # set input_str to command-line argument if given
-    if args.input_line != '':
-        input_str = args.input_line
+    input_str = args.inputline
 
 
     #window_size = 2
-    words_per_window = 3
-    composition_depth = 1
+    #words_per_window = 3
+    #composition_depth = 1
     # TODO: Concatenating two words of the lexicon to one words should be
     # more expensive than the sum of both combined words. Else, merge
     # errors are not corrected.
+    #result_num = 10
 
-    result_num = 10
-
-    error_transducer, lexicon_transducer =\
-        load_transducers_bracket(\
-        'transducers/max_error_3_context_23_dta.hfst',\
-        'transducers/punctuation_transducer_dta.hfst',\
-        'transducers/lexicon_transducer_dta.hfst',\
-        'transducers/open_bracket_transducer_dta.hfst',\
-        'transducers/close_bracket_transducer_dta.hfst',\
-        flag_encoder,\
-        composition_depth = composition_depth,\
-        words_per_window = words_per_window)
+    if args.punctuation == 'bracket':
+        ## bracketing rules
+        error_transducer, lexicon_transducer = load_transducers_bracket(
+            'fst/max_error_3_context_23_dta.hfst',
+            #'fst/max_error_3_context_23_dta19-reduced.Fraktur4.hfst',
+            'fst/punctuation_transducer_dta.hfst',
+            'fst/lexicon_transducer_dta.hfst',
+            'fst/open_bracket_transducer_dta.hfst',
+            'fst/close_bracket_transducer_dta.hfst',
+            flag_encoder,
+            composition_depth=args.composition_depth,
+            words_per_window=args.words_per_window)
         #'transducers/morphology_with_identity.hfst')
 
-    #error_transducer, lexicon_transducer =\
-    #    load_transducers_preserve_punctuation(\
-    #    'transducers/preserve_punctuation/max_error_3_context_23.hfst',\
-    #    'transducers/any_punctuation_no_space.hfst',\
-    #    'transducers/lexicon_transducer_dta.hfst',\
-    #    flag_encoder,\
-    #    composition_depth = composition_depth,\
-    #    words_per_window = words_per_window)
 
-    #error_transducer, lexicon_transducer =\
-    #    load_transducers_inter_word('transducers/max_error_3_context_23_dta.hfst',\
-    #    'transducers/lexicon_transducer_dta.hfst',\
-    #    'transducers/left_punctuation.hfst',\
-    #    'transducers/right_punctuation.hfst',\
-    #    flag_encoder,\
-    #    words_per_window = words_per_window,\
-    #    composition_depth = composition_depth)
+    elif args.punctuation == 'lm':
+        ## inter-word language model
+        error_transducer, lexicon_transducer = load_transducers_inter_word(
+            'fst/max_error_3_context_23_dta.hfst',
+            #'fst/max_error_3_context_23_dta19-reduced.Fraktur4.hfst',
+            'fst/lexicon_transducer_dta.hfst',
+            'fst/left_punctuation.hfst',
+            'fst/right_punctuation.hfst',
+            flag_encoder,
+            words_per_window=args.words_per_window,
+            composition_depth=args.composition_depth)
+
+    elif args.punctuation == 'preserve':
+        ## no punctuation changes
+        error_transducer, lexicon_transducer = load_transducers_preserve_punctuation(
+            'fst/preserve_punctuation_max_error_3_context_23.hfst',
+            #'fst/max_error_3_context_23_preserve_punctuation_dta19-reduced.Fraktur4.hfst',
+            'fst/any_punctuation_no_space.hfst',
+            'fst/lexicon_transducer_dta.hfst',
+            flag_encoder,
+            composition_depth=args.composition_depth,
+            words_per_window=args.words_per_window)
+        
 
     openfst = True # use OpenFST for composition?
 
@@ -1086,10 +1096,8 @@ def main():
 
         # write lexicon and error transducer in OpenFST format
 
-        error_filename = 'error.ofst'
-        lexicon_filename = 'lexicon.ofst'
-        error_filename_b = b'error.ofst'
-        lexicon_filename_b = b'lexicon.ofst'
+        error_filename = u'error.ofst'
+        lexicon_filename = u'lexicon.ofst'
 
         for filename, fst in [(error_filename, error_transducer), (lexicon_filename, lexicon_transducer)]:
             out = hfst.HfstOutputStream(filename=filename, hfst_format=False, type=hfst.ImplementationType.TROPICAL_OPENFST_TYPE)
@@ -1099,7 +1107,7 @@ def main():
 
         # generate Composition Object
 
-        composition = pyComposition(error_filename_b, lexicon_filename_b, result_num)
+        composition = pyComposition(error_filename.encode('utf-8'), lexicon_filename.encode('utf-8'), args.result_num)
         print(composition)
 
         preparation_done = time.time()
@@ -1107,7 +1115,7 @@ def main():
 
         # apply correction using Composition Object
 
-        complete_output = window_size_1_2(input_str, error_transducer, lexicon_transducer, flag_encoder, result_num, composition)
+        complete_output = window_size_1_2(input_str, error_transducer, lexicon_transducer, flag_encoder, args.result_num, composition)
 
 
     else:
@@ -1117,7 +1125,7 @@ def main():
 
         # apply correction directly in hfst
 
-        complete_output = window_size_1_2(input_str, error_transducer, lexicon_transducer, flag_encoder, result_num)
+        complete_output = window_size_1_2(input_str, error_transducer, lexicon_transducer, flag_encoder, args.result_num)
 
     # write output to filesystem
 
@@ -1146,12 +1154,10 @@ def main():
     print('COMPLETE OUTPUT NO FLAGS')
     print_output_paths(complete_output)
 
-    return
-
     ## load and apply language model
 
-    lm_file = 'lang_mod_theta_0_000001.mod.modified.hfst'
-    lowercase_file = 'lowercase.hfst'
+    lm_file = 'fst/lang_mod_theta_0_000001.mod.modified.hfst'
+    lowercase_file = 'fst/lowercase.hfst'
 
     lm_fst = helper.load_transducer(lm_file)
     lowercase_fst = helper.load_transducer(lowercase_file)
