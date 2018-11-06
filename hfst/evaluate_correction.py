@@ -103,8 +103,9 @@ def main():
     
     parser = argparse.ArgumentParser(description='OCR post-correction batch evaluation ocrd-cor-asv-fst')
     parser.add_argument('directory', metavar='PATH', help='directory for GT, input, and output files')
-    parser.add_argument('-I', '--input-suffix', metavar='ISUF', type=str, default='txt', help='input (OCR) filenames suffix')
-    parser.add_argument('-O', '--output-suffix', metavar='OSUF', type=str, default='cor-asv-fst.txt', help='output (corrected) filenames suffix')
+    parser.add_argument('-I', '--input-suffix', metavar='SUF', type=str, default='txt', help='input (OCR) filenames suffix')
+    parser.add_argument('-O', '--output-suffix', metavar='SUF', type=str, default='cor-asv-fst.txt', help='output (corrected) filenames suffix')
+    parser.add_argument('-M', '--metric', metavar='TYPE', type=str, choices=['Levenshtein', 'combining-e-umlauts'], default='combining-e-umlauts', help='distance metric to apply')
     args = parser.parse_args()
     
     #l1 = '########Mit unendlich ſuͤßem Sehnen########'
@@ -140,8 +141,18 @@ def main():
         print('GT:        ', gt_line)
         
         # get character error rate of OCR and corrected text
-        edits_ocr_line, len_ocr_line = get_adjusted_distance(ocr_line, gt_line) #editdistance.eval(ocr_line, gt_line), len(gt_line)
-        edits_cor_line, len_cor_line = get_adjusted_distance(cor_line, gt_line) #editdistance.eval(cor_line, gt_line), len(gt_line)
+        # FIXME: convert to NFC (canonical composition normal form) before
+        #        perhaps even NFKC (canonical composition compatibility normal form),
+        #                but GT guidelines require keeping "ſ"
+        if args.metric == 'Levenshtein': # much faster
+            edits_ocr_line, len_ocr_line = editdistance.eval(ocr_line, gt_line), len(gt_line)
+            edits_cor_line, len_cor_line = editdistance.eval(cor_line, gt_line), len(gt_line)
+        elif args.metric == 'combining-e-umlauts':
+            edits_ocr_line, len_ocr_line = get_adjusted_distance(ocr_line, gt_line)
+            edits_cor_line, len_cor_line = get_adjusted_distance(cor_line, gt_line)
+        else:
+            raise Exception("evaluation metric '%s' not implemented" % args.metric)
+        
         print('CER OCR:       ', edits_ocr_line / len_ocr_line)
         print('CER Corrected: ', edits_cor_line / len_cor_line)
         
