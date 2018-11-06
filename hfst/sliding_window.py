@@ -9,6 +9,7 @@ import argparse
 from composition import pyComposition
 import helper
 
+REJECTION_WEIGHT = 1.5 # weight assigned to all transitions in input transducer when disjoining with result transducer as fallback (see set_transition_weights); trade-off between over- and under-correction
 
 def create_input_transducer(input_str):
     """Takes input_str and creates a transducer accepting that string."""
@@ -168,7 +169,7 @@ def set_transition_weights(fst):
     basic_fst = hfst.HfstBasicTransducer(fst)
     for state in basic_fst.states():
         for transition in basic_fst.transitions(state):
-            transition.set_weight(1.5) # 10.0 # hyperparameter!
+            transition.set_weight(REJECTION_WEIGHT) # 10.0 # hyperparameter!
     return hfst.HfstTransducer(basic_fst)
 
 
