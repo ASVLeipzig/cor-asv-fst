@@ -1,6 +1,8 @@
 from os import listdir
 
+import logging
 import argparse
+import tempfile
 import multiprocessing as mp
 import hfst
 
@@ -9,8 +11,6 @@ import sliding_window as sw
 import helper
 
 # globals (for painless cow-semantic shared memory fork-based multiprocessing)
-error_transducer = None
-lexicon_transducer = None
 lowercase_transducer = None
 lm_transducer = None
 flag_encoder = None
@@ -25,7 +25,7 @@ def main():
     specified in output_suffix.
     """
 
-    global error_transducer, lexicon_transducer, lowercase_transducer, lm_transducer, flag_encoder, args, composition
+    global lowercase_transducer, lm_transducer, flag_encoder, args, composition
     
     parser = argparse.ArgumentParser(description='OCR post-correction ocrd-cor-asv-fst batch-processor tool')
     parser.add_argument('directory', metavar='PATH', help='directory for input and output files')
@@ -36,9 +36,12 @@ def main():
     parser.add_argument('-R', '--result-num', metavar='NUM', type=int, default=10, help='result paths per window')
     parser.add_argument('-D', '--composition-depth', metavar='NUM', type=int, default=2, help='number of lexicon words that can be concatenated')
     parser.add_argument('-J', '--rejection-weight', metavar='WEIGHT', type=float, default=1.5, help='transition weight for unchanged input window')
-    parser.add_argument('-L', '--apply-lm', action='store_true', default=False, help='also compose with n-gram language model for rescoring')
+    parser.add_argument('-A', '--apply-lm', action='store_true', default=False, help='also compose with n-gram language model for rescoring')
     parser.add_argument('-Q', '--processes', metavar='NUM', type=int, default=1, help='number of processes to use in parallel')
+    parser.add_argument('-L', '--log-level', metavar='LEVEL', type=str, choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'], default='INFO', help='verbosity of logging output (standard log levels)') # WARN
     args = parser.parse_args()
+
+    logging.basicConfig(level=logging.getLevelName(args.log_level))
     
     # prepare transducers
 
@@ -89,66 +92,68 @@ def main():
     
     # prepare Composition Object
 
-    error_filename = u'error.ofst'
-    lexicon_filename = u'lexicon.ofst'
-
-    for filename, fst in [(error_filename, error_transducer), (lexicon_filename, lexicon_transducer)]:
-        out = hfst.HfstOutputStream(filename=filename, hfst_format=False, type=hfst.ImplementationType.TROPICAL_OPENFST_TYPE)
-        out.write(fst)
-        out.flush()
-        out.close()
-
-    composition = pyComposition(error_filename.encode('utf-8'), lexicon_filename.encode('utf-8'), args.result_num)
-
-    if args.apply_lm:
-        lm_file = 'fst/lang_mod_theta_0_000001.mod.modified.hfst'
-        lowercase_file = 'fst/lowercase.hfst'
-        
-        lm_transducer = helper.load_transducer(lm_file)
-        lowercase_transducer = helper.load_transducer(lowercase_file)
-
-    sw.REJECTION_WEIGHT = args.rejection_weight
+    # write lexicon and error transducer files in OpenFST format
+    # (cannot use one file for both with OpenFST::Read)
+    with tempfile.NamedTemporaryFile() as error_f:
+        with tempfile.NamedTemporaryFile() as lexicon_f:
+            for filename, fst in [(error_f.name, error_transducer), (lexicon_f.name, lexicon_transducer)]:
+                out = hfst.HfstOutputStream(filename=filename, hfst_format=False, type=hfst.ImplementationType.TROPICAL_OPENFST_TYPE)
+                out.write(fst)
+                out.close()
+            
+            composition = pyComposition(error_f.name, lexicon_f.name, args.result_num, args.rejection_weight)
+            
+            if args.apply_lm:
+                lm_file = 'fst/lang_mod_theta_0_000001.mod.modified.hfst'
+                lowercase_file = 'fst/lowercase.hfst'
+                
+                lm_transducer = helper.load_transducer(lm_file)
+                lowercase_transducer = helper.load_transducer(lowercase_file)
+            
+            sw.REJECTION_WEIGHT = args.rejection_weight
     
-    # read and process test data
-
-    #path = '../../../daten/dta19-reduced/testdata/'
-
-    gt_dict = helper.create_dict(args.directory + "/", 'gt.txt')
-    ocr_dict = helper.create_dict(args.directory + "/", args.input_suffix)
-    
-    results = []
-    with mp.Pool(processes=args.processes) as pool:
-        params = list(ocr_dict.items()) #[10:20]
-        results = pool.starmap(process, params)
-        
-    for basename, input_str, output_str in results:
-        print(basename)
-        print(input_str)
-        print(output_str)
-        print(gt_dict[basename])
-        print()
+            # read and process test data
+            
+            gt_dict = helper.create_dict(args.directory + "/", 'gt.txt')
+            ocr_dict = helper.create_dict(args.directory + "/", args.input_suffix)
+            
+            results = []
+            with mp.Pool(processes=args.processes) as pool:
+                params = list(ocr_dict.items()) #[10:20]
+                results = pool.starmap(process, params)
+            
+            for i, (basename, input_str, output_str) in enumerate(results):
+                print("%03d/%03d: %s" % (i+1, len(params), basename))
+                print(input_str)
+                print(output_str)
+                print(gt_dict[basename])
+                print()
     
     return
 
 # needs to be global for mp:
 def process(basename, input_str):
-    global error_transducer, lexicon_transducer, lowercase_transducer, lm_transducer, flag_encoder, args, composition
+    global lowercase_transducer, lm_transducer, flag_encoder, args, composition
     
-    complete_output = sw.window_size_1_2(input_str, error_transducer, lexicon_transducer, flag_encoder, args.result_num, composition)
+    logging.info('input_str:  %s', input_str)
+    
+    complete_output = sw.window_size_1_2(input_str, None, None, flag_encoder, args.result_num, composition)
     if not args.apply_lm:
         complete_output.n_best(1)
         
-    complete_output = sw.remove_flags(hfst.HfstBasicTransducer(complete_output), flag_encoder)
-    complete_output = hfst.HfstTransducer(complete_output)
+    complete_output = sw.remove_flags(complete_output, flag_encoder)
     
     if args.apply_lm:
         complete_output.output_project()
         # FIXME: should also be composed via OpenFST library (pyComposition)
         complete_output.compose(lowercase_transducer)
         complete_output.compose(lm_transducer)
+        complete_output.input_project()
     
     complete_paths = hfst.HfstTransducer(complete_output).extract_paths(max_number=1, max_cycles=0)
-    output_str = list(complete_paths.items())[0][1][0][0].replace('@_EPSILON_SYMBOL_@', '')
+    output_str = list(complete_paths.items())[0][1][0][0].replace(hfst.EPSILON, '') # really necessary?
+
+    logging.info('output_str: %s', output_str)
     
     with open(args.directory + "/" + basename + "." + args.output_suffix, 'w') as f:
         f.write(output_str)

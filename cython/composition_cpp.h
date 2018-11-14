@@ -1,10 +1,15 @@
-#ifndef TEST_H
-#define TEST_H
+#ifndef COMPOSITION_H
+#define COMPOSITION_H
 
 #include <fst/fstlib.h>
 #include <string>
+#include <cstdio>
 #include <codecvt>
 #include <locale>
+
+#include <sys/time.h>
+#include <sys/resource.h>
+#include <ctime>
 
 using namespace fst;
 using namespace std;
@@ -27,32 +32,50 @@ class Composition {
 
 public: 
 
-    Composition(const string &error_file, const string &lexicon_file, int nbest);
+    Composition(const string &error_file, const string &lexicon_file, int nbest, float rejection_weight);
     ~Composition();
 
-    string compose(const string input_str);
-    string compose_file(const string input_str);
+    string correct_string(const string input_str);
+    string correct_transducer_file(const string input_transducer_filename);
+    string correct_transducer_string(const string input_transducer_str);
 
     int nbest; 
-
-    string error_file;
-    string lexicon_file;
+    float rejection_weight; 
 
 private:
 
-    SymbolTable symbol_table;
+    class RejectionWeight {
+    public:
+      explicit RejectionWeight(const W &r_ = W::One()) : r(r_) {}
+      W operator()(W w) const {
+        return Times<float>(w, r);
+      }
+    private:
+      W r;
+    };
 
-    SVF create_input_transducer(string word, const SymbolTable* table);
-
-    SVF eager_compose(SVF *input1, SVF *input2, SVF *input3, string word);
-    SVF eager_compose(SVF *input1, SVF *input2, SVF *input3, SVF *input_transducer);
-
-    ComposeFst<StdArc> lazy_compose(SVF *input1, SVF *input2, SVF *input3, string word);
-    SVF compose_and_search(SVF *input1, SVF *input2, SVF *input3, string word, bool lazy, int nbest);
-    SVF compose_and_search(SVF *input1, SVF *input2, SVF *input3, SVF *input_transducer, bool lazy, int nbest);
-
+    WeightConvertMapper<StdArc, StdArc, RejectionWeight> *weight_mapper; // order: depends on rejection weight
+    
     SVF *error_transducer;
     SVF *lexicon_transducer;
+    SVF *morphology_transducer;
+    SymbolTable *symbol_table; // order: depends on error and lexicon transducer
+
+    //StringCompiler<StdArc> string_compiler;
+    StringCompiler<StdArc> *string_compiler; // order: depends on symbol table
+    std::unique_ptr<SVF> create_input_transducer(string input_str);
+
+    std::unique_ptr<SVF> backoff_result(SVF *input_transducer, SVF *output_transducer);
+    
+    std::unique_ptr<SVF> eager_compose(string input_str);
+    std::unique_ptr<SVF> eager_compose(SVF *input_transducer);
+    std::unique_ptr<StdComposeFst> lazy_compose(string input_str);
+    
+    std::unique_ptr<SVF> compose_and_search(string input_str, bool lazy);
+    std::unique_ptr<SVF> compose_and_search(SVF *input_transducer, bool lazy);
+
+    struct rusage usage;
+    float get_cpu_time();
 
 };
 #endif
