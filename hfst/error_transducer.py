@@ -7,15 +7,16 @@ from nltk import ngrams
 
 # from alignment.sequence import Sequence
 # import alignment
-# alignment.sequence.GAP_ELEMENT = 0
+# alignment.sequence.GAP_ELEMENT = ' '
 # from alignment.sequence import GAP_ELEMENT
 # from alignment.vocabulary import Vocabulary
 # from alignment.sequencealigner import SimpleScoring, StrictGlobalSequenceAligner
 import difflib
-GAP_ELEMENT = 0
+# gap/epsilon needs to be a character so we can easily make a transducer from it, but must not ever occur in input
+GAP_ELEMENT =  ' ' # nbsp # '\0' # nul breaks things in libhfst
 
 import helper
-
+from sliding_window import FlagEncoder
 
 def get_confusion_dicts(gt_dict, raw_dict, max_n):
     """
@@ -55,7 +56,9 @@ def get_confusion_dicts(gt_dict, raw_dict, max_n):
         #print(raw_line)
         if not gt_line or not raw_line:
             continue
-
+        if GAP_ELEMENT in gt_line or GAP_ELEMENT in raw_line:
+            raise Exception('gap element must not occur in text', GAP_ELEMENT, raw_line, gt_line)
+        
         # alignment of lines
 
         # a = Sequence(raw_line)
@@ -113,19 +116,21 @@ def get_confusion_dicts(gt_dict, raw_dict, max_n):
             
             if alignment:
                 
-                raw_seq = list(map(lambda x: x[0], alignment))
-                gt_seq = list(map(lambda x: x[1], alignment))
+                raw_aligned = ''.join(map(lambda x: x[0], alignment))
+                gt_aligned = ''.join(map(lambda x: x[1], alignment))
                 
                 for n in range(1,max_n+1): # the ngrams which are considered
                     
-                    raw_grams = ngrams(raw_seq, n)
-                    gt_grams = ngrams(gt_seq, n)
+                    raw_ngrams = ngrams(raw_aligned, n)
+                    gt_ngrams = ngrams(gt_aligned, n)
                     
-                    for raw_gram, gt_gram in zip(raw_grams, gt_grams):
-                        #print(raw_gram, gt_gram)
+                    for raw_ngram, gt_ngram in zip(raw_ngrams, gt_ngrams):
+                        #print(raw_ngram, gt_ngram)
+                        raw_string = ''.join(raw_ngram)
+                        gt_string = ''.join(gt_ngram)
                         
-                        confusion_dicts[n][raw_gram] = confusion_dicts[n].setdefault(raw_gram, {})
-                        confusion_dicts[n][raw_gram][gt_gram] = confusion_dicts[n][raw_gram].setdefault(gt_gram, 0) + 1
+                        confusion_dicts[n][raw_string] = confusion_dicts[n].setdefault(raw_string, {})
+                        confusion_dicts[n][raw_string][gt_string] = confusion_dicts[n][raw_string].setdefault(gt_string, 0) + 1
     
     #for i in [1, 2, 3]:
     #    print(confusion_dicts[i].items())
@@ -151,39 +156,35 @@ def preprocess_confusion_dict(confusion_dict):
 
     frequency_list = []
 
-    items = confusion_dict.items()
+    raw_items = confusion_dict.items()
 
     # count number of all occurrences
-    s = [list(item[1].items()) for item in items]
-    s = functools.reduce(lambda x, y: x + y, s, [])
-    s = sum([x[1] for x in s])
-    #print(s)
+    total_freq = sum([sum(freq
+                          for gt_ngram, freq in gt_dict.items())
+                      for raw_ngram, gt_dict in raw_items])
+    print('total edit count:', total_freq)
 
-    # count number of ε substitutions
-    epsilon_occ = sum([x[1] for x in confusion_dict.setdefault(GAP_ELEMENT, {}).items()])
-    #epsilon_occ = sum([x[1] for x in confusion_dict[alignment.sequence.GAP_ELEMENT].items()])
-    #print(epsilon_occ)
+    # count number of ε-substitutions
+    epsilon_freq = sum([gap_freq
+                        for gap_ngram, gap_freq in confusion_dict.setdefault(GAP_ELEMENT, {}).items()])
+    #epsilon_freq = sum([gap_freq for gap_ngram, gap_freq in confusion_dict[GAP_ELEMENT].items()])
+    print('insertion count:', epsilon_freq)
 
-    # set ε to ε transitions to number of all occurrences minus ε substitutions
+    # set ε-to-ε transitions to number of all occurrences minus ε-substitutions
     # (because it models an occurrence of an ε that is not confused with an
     # existing character; this is needed for correctly calculating the
     # frequencies of ε to something transitions;
     # in the resulting (not complete) error transducer, these ε to ε transitions
     # are not preserved, but only transitions changing the input)
-    if epsilon_occ != 0:
-        confusion_dict[GAP_ELEMENT][GAP_ELEMENT] = s - epsilon_occ
+    if epsilon_freq != 0:
+        confusion_dict[GAP_ELEMENT][GAP_ELEMENT] = total_freq - epsilon_freq
 
-    for item in items:
-        #print(item)
+    for raw_ngram, gt_dict in raw_items:
+        substitutions = gt_dict.items()
+        total_freq = sum([freq for gt_ngram, freq in substitutions])
 
-        raw_gram = item[0]
-        substitutions = item[1].items()
-
-        raw_gram_freq = sum([x[1] for x in substitutions])
-        #print(raw_gram_freq)
-
-        for sub in substitutions:
-            frequency_list.append((raw_gram, sub[0], sub[1] / raw_gram_freq))
+        for gt_ngram, freq in substitutions:
+            frequency_list.append((raw_ngram, gt_ngram, freq / total_freq))
 
     #print(sorted(frequency_list, key=lambda x: x[2]))
     return frequency_list
@@ -194,24 +195,26 @@ def write_frequency_list(frequency_list, filename):
 
     with open(filename, 'w') as f:
         for raw_gram, gt_gram, freq in frequency_list:
-            f.write(u''.join(map(lambda x: x if x != GAP_ELEMENT else u'□', raw_gram)) + u'\t' +
-                    u''.join(map(lambda x: x if x != GAP_ELEMENT else u'□', gt_gram)) + u'\t' +
+            f.write(raw_gram.replace(GAP_ELEMENT, u'□') + u'\t' +
+                    gt_gram.replace(GAP_ELEMENT, u'□') + u'\t' +
                     str(freq) + u'\n')
     return
 
 
-# def read_frequency_list(filename):
-#     """Read frequency_list from filename."""
+def read_frequency_list(filename):
+    """Read frequency_list from filename."""
 
-#     freq_list = []
-#     with open(filename, 'r') as f:
-#         for line in f:
-#             instr, outstr, freq = line.strip('\n').split('\t')
-#             freq_list.append((instr, outstr, float(freq))) # will not work with lists
-#     return freq_list
+    freq_list = []
+    with open(filename, 'r') as f:
+        for line in f:
+            instr, outstr, freq = line.strip('\n').split('\t')
+            freq_list.append((instr.replace(u'□', GAP_ELEMENT),
+                              outstr.replace(u'□', GAP_ELEMENT),
+                              float(freq)))
+    return freq_list
 
 
-def transducer_from_list(confusion_list, frequency_class=False, identity_transitions=False):
+def transducer_from_list(confusion_list, frequency_class=False, weight_threshold=7.0, identity_transitions=False):
     """
     Convert a list of tuples: input_gram, output_gram, relative_frequency,
     into a weighted transducer performing the given transductions with 
@@ -219,6 +222,9 @@ def transducer_from_list(confusion_list, frequency_class=False, identity_transit
     If frequency_class is True, then assume frequency classes/ranks are given
     instead of the relative frequencies, so no logarithm of the values
     will be performed for obtaining the weight.
+    If identity_transitions is True, then keep non-edit transitions.
+    If weight_threshold is given, then prune away those transitions with 
+    a weight higher than that.
     """
     
     if frequency_class:
@@ -227,23 +233,49 @@ def transducer_from_list(confusion_list, frequency_class=False, identity_transit
     else:
         confusion_list_log = list(map(lambda x: (x[0], x[1], -math.log(x[2])), confusion_list))
 
-    fst_dict = {}
+    confusion_fst = hfst.HfstBasicTransducer()
+    # not as good as using .substitute() afterwards: tokenizer based...
+    # tok = hfst.HfstTokenizer()
+    # tok.add_skip_symbol(GAP_ELEMENT)
+    # not good at all (and slow): dictionary based...
+    # fst_dict = {}
 
     for in_gram, out_gram, weight in confusion_list_log:
-        
-        # filter out epsilon -> epsilon transition
-        if (in_gram.count(GAP_ELEMENT) < len(in_gram) or
-            out_gram.count(GAP_ELEMENT) < len(out_gram)):
-            # filter out identity transitions if identity_transitions=False (useful for max_errors per window)
-            if identity_transitions or in_gram != out_gram:
-                regap = lambda x: x if x != GAP_ELEMENT else hfst.EPSILON
-                instr = ''.join(map(regap, in_gram))
-                outstr = ''.join(map(regap, out_gram))
-                fst_dict[instr] = fst_dict.setdefault(instr, []) + [(outstr, weight)]
 
-    confusion_fst = hfst.fst(fst_dict)
-    #confusion_fst.substitute(GAP_ELEMENT, hfst.EPSILON, input=bool, output=bool)
+        # prune away rare edits:
+        if weight_threshold and weight > weight_threshold:
+            continue
+        # filter out identity transitions (unless identity_transitions=True):
+        if in_gram == out_gram and not identity_transitions:
+            continue
+        # instr = in_gram.replace(GAP_ELEMENT, "")
+        # outstr = out_gram.replace(GAP_ELEMENT, "")
+        # # filter out ε-to-ε transitions:
+        # if not instr and not outstr:
+        #     continue
+        # # avoid hfst error 'Empty word.':
+        # if not instr:
+        #     instr = hfst.EPSILON
+        # if not outstr:
+        #     outstr = hfst.EPSILON
+        # fst_dict[instr] = fst_dict.setdefault(instr, []) + [(outstr, weight)]
+        # much faster than hfst.fst(dict):
+        #confusion_fst.disjunct(tok.tokenize(in_gram, out_gram), weight)
+        # tokenize makes suboptimal aligments:
+        confusion_fst.disjunct(tuple(zip(in_gram, out_gram)), weight)
+    
+    #print('creating confusion fst for %d input n-grams' % len(fst_dict))
+    #confusion_fst = hfst.fst(fst_dict) # does not respect epsilon/gap and multi-character symbols (for flags at runtime)
+    # maybe we can keep this approach with hfst.tokenized_fst()?
+    confusion_fst.substitute(GAP_ELEMENT, hfst.EPSILON, input=True, output=True)
 
+    # make sure the error transducer already contains the flag symbols
+    # needed for the sliding window construction (to avoid the need to
+    # merge symbol tables on the input transducer during composition):
+    confusion_fst = hfst.HfstTransducer(confusion_fst)
+    flag_encoder = FlagEncoder()
+    for flag in flag_encoder.flag_list:
+        confusion_fst.insert_to_alphabet(flag)
     return confusion_fst
 
 
@@ -267,7 +299,8 @@ def is_punctuation_edit(raw_char, gt_char):
     allow edits from punctuation to alphanumeric characters,
     (because those often occur inside words), but forbid 
     edits from alphanumeric to punctuation characters,
-    as well as punctuation-only edits.
+    as well as punctuation-only edits (because those likely
+    cannot be corrected with a lexicon).
     Whether or not that edit is part of a punctuation edit
     still depends on the context, though.
     """
@@ -357,10 +390,7 @@ def main():
         optimize_error_transducer(error_transducer)
 
         # write transducer to file
-        helper.save_transducer('error_transducer_' + str(n) + '.hfst', error_transducer)
-        #error_transducer = helper.load_transducer('error_transducer_' + str(n) + '.hfst')
-
-        #print(error_transducer)
+        error_transducer.write_to_file('error_transducer_' + str(n) + '.hfst')
 
 if __name__ == '__main__':
     main()
