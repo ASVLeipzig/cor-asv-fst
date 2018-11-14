@@ -19,23 +19,15 @@ def main():
     
     error_transducers = {}
     for n in range(1,args.max_errors+1):
-        error_transducers[n] = helper.load_transducer('error_transducer_' + str(n) + '.hfst')
+        error_transducers[n] = hfst.HfstTransducer.read_from_file('error_transducer_' + str(n) + '.hfst')
 
     contexts = []
     for n in range(1,args.max_context+1):
         for m in range(1,n+1):
             contexts.append(list(range(m,n+1)))
     
-    #error_transducer_1 = helper.load_transducer('error_transducer_1.hfst')
-    #error_transducer_2 = helper.load_transducer('error_transducer_2.hfst')
-    #error_transducer_3 = helper.load_transducer('error_transducer_3.hfst')
-    
     # FIXME: make proper back-off transducer
     
-    #error_numbers = [1, 2, 3, 4, 5]
-    #error_numbers = [1, 2, 3]
-    #contexts = ['1', '2', '3', '123', '23'] # all possible contexts
-
     acceptor = hfst.regex('?')
     acceptor.repeat_star()
     acceptor.minimize()
@@ -45,27 +37,29 @@ def main():
         print('Context: ', context)
 
         error_transducer = hfst.HfstTransducer()
-
-        for n in range(1,args.max_errors+1):
-            if n in context:
-                error_transducer.disjunct(error_transducers[n])
-
+        
+        if n in context:
+            error_transducer.disjunct(error_transducers[n])
+        
         one_error = acceptor.copy()
         one_error.concatenate(error_transducer)
-        one_error.optionalize()
-
+        #one_error.optionalize()
+        
+        # TODO: find out why both minimize and minimize+remove_epsilons makes FSTs extremely huge and slow at runtime
+        # TODO: find out why incremental concat+disjoin with previous ET (starting with all-acceptor) is larger and slower
         #error_transducer = acceptor.copy()
         for num_errors in range(1,args.max_errors+1):
             print('Number of errors:', num_errors)
-            
             result_transducer = one_error.copy()
-            result_transducer.repeat_n(num_errors)
-            #result_transducer.disjunct(error_transducer) # N ∪ N-1 # deteriorates model
+            #result_transducer.repeat_n(num_errors) # instead of reapeat_n_minus: together with optionalize above
+            result_transducer.repeat_n_minus(num_errors)
+            #result_transducer.concatenate(error_transducer) # N …
+            #result_transducer.disjunct(error_transducer) # … ∪ N-1
             
             error_transducer =  result_transducer
             error_transducer.concatenate(acceptor)
-
-            helper.save_transducer('max_error_' + str(num_errors) + '_context_'+ ''.join(map(str,context)) + '.hfst', error_transducer)
+            
+            error_transducer.write_to_file('max_error_' + str(num_errors) + '_context_'+ ''.join(map(str,context)) + '.hfst')
 
 
 if __name__ == '__main__':
