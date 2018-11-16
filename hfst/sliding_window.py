@@ -533,7 +533,7 @@ def get_flag_acceptor(flag_encoder):
     
     #print('Flag Acceptor: ', flag_acceptor)
     flag_acceptor = hfst.HfstTransducer(flag_acceptor)
-    flag_acceptor.optionalize()
+    #flag_acceptor.optionalize() # wrong, and extremely time costly!
 
     return flag_acceptor
 
