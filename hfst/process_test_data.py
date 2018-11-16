@@ -94,12 +94,10 @@ def main():
 
     # write lexicon and error transducer files in OpenFST format
     # (cannot use one file for both with OpenFST::Read)
-    with tempfile.NamedTemporaryFile() as error_f:
-        with tempfile.NamedTemporaryFile() as lexicon_f:
-            for filename, fst in [(error_f.name, error_transducer), (lexicon_f.name, lexicon_transducer)]:
-                out = hfst.HfstOutputStream(filename=filename, hfst_format=False, type=hfst.ImplementationType.TROPICAL_OPENFST_TYPE)
-                out.write(fst)
-                out.close()
+    with tempfile.NamedTemporaryFile(prefix='cor-asv-fst-sw-error') as error_f:
+        with tempfile.NamedTemporaryFile(prefix='cor-asv-fst-sw-lexicon') as lexicon_f:
+            sw.write_fst(error_f.name, error_transducer)
+            sw.write_fst(lexicon_f.name, lexicon_transducer)
             
             composition = pyComposition(error_f.name, lexicon_f.name, args.result_num, args.rejection_weight)
             
