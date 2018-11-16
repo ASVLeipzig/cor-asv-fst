@@ -694,13 +694,7 @@ def load_transducers_bracket(error_file,
     result_lexicon_transducer.concatenate(space_transducer)
     
     # repeat single-token lexicon transducer according to maximum words per window:
-    #result_lexicon_transducer.repeat_n_to_k(1, words_per_window)
-    result_lexicon_transducer.repeat_n_minus(words_per_window-1)
-    result_lexicon_transducer.concatenate(flag_acceptor)
-    result_lexicon_transducer.concatenate(open_bracket_transducer) # (optional)
-    result_lexicon_transducer.concatenate(lexicon_transducer) # includes dash and numbers
-    result_lexicon_transducer.concatenate(punctuation_transducer) # (optional)
-    result_lexicon_transducer.concatenate(close_bracket_transducer) # (optional)
+    result_lexicon_transducer.repeat_n_to_k(1, words_per_window)
     
     # synchronize with right window boundary:
     result_lexicon_transducer.concatenate(flag_acceptor)
@@ -784,11 +778,7 @@ def load_transducers_preserve_punctuation(error_file,
     result_lexicon_transducer.concatenate(space_transducer)
     
     # repeat single-token lexicon transducer according to maximum words per window:
-    #result_lexicon_transducer.repeat_n_to_k(1, words_per_window)
-    result_lexicon_transducer.repeat_n_minus(words_per_window-1)
-    result_lexicon_transducer.concatenate(punctuation_transducer) # both left and right contexts
-    result_lexicon_transducer.concatenate(lexicon_transducer) # includes dash and numbers, has no edits removing punctuation
-    result_lexicon_transducer.concatenate(punctuation_transducer) # both left and right contexts
+    result_lexicon_transducer.repeat_n_to_k(1, words_per_window)
     
     # synchronize with right window boundary:
     result_lexicon_transducer.concatenate(flag_acceptor)
@@ -829,7 +819,10 @@ def load_transducers_inter_word(error_file,
     flag_acceptor = get_flag_acceptor(flag_encoder)
     space_transducer = hfst.regex('% :% ')
     error_transducer = helper.load_transducer(error_file)
-
+    
+    # when deleting spaces, try to also delete flags:
+    error_transducer.substitute((' ', hfst.EPSILON), get_edit_space_transducer(flag_encoder))
+    
     # ensure error transducer already contains flag symbols:
     alphabet = error_transducer.get_alphabet()
     for flag in flag_encoder.flag_list:
@@ -876,8 +869,10 @@ def load_transducers_inter_word(error_file,
     
     # repeat single-token lexicon transducer according to maximum words per window:
     result_lexicon_transducer.repeat_n_minus(words_per_window-1)
+    result_lexicon_transducer.concatenate(flag_acceptor)
     result_lexicon_transducer.concatenate(lexicon_transducer)
     result_lexicon_transducer.concatenate(punctuation_left_transducer)
+    result_lexicon_transducer.concatenate(space_transducer)
     
     # synchronize with right window boundary:
     result_lexicon_transducer.concatenate(flag_acceptor)
