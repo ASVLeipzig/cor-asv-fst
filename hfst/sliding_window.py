@@ -133,7 +133,8 @@ def compose_and_search(input, error_transducer, lexicon_transducer, result_num, 
 
     else: # compose using HFST
         
-        result_fst = input_transducer.copy()
+        input_transducer = create_input_transducer(input)
+        result_fst = input_transducer
 
         #logging.info("input_str: %s ", input_str)
         #print("compose transducers")
