@@ -248,7 +248,7 @@ std::unique_ptr<SVF> Composition::compose_and_search(SVF *input_transducer,
 
   std::unique_ptr<SVF> composed = eager_compose(input_transducer);
 
-#ifdef COMPOSITIN_TIMES
+#ifdef COMPOSITION_TIMES
   float compose_time = get_cpu_time();
 #endif
 
@@ -262,7 +262,7 @@ std::unique_ptr<SVF> Composition::compose_and_search(SVF *input_transducer,
   ShortestPath(*composed, nbest_transducer.get(), &distance, opts);
   composed.reset();
 
-#ifdef COMPOSITIN_TIMES
+#ifdef COMPOSITION_TIMES
   float search_time = get_cpu_time();
   cerr << "Search Time: " << (search_time - compose_time) << endl;
 #endif
@@ -316,7 +316,7 @@ std::unique_ptr<SVF> Composition::compose_and_search(string input_str,
   static const ShortestPathOptions<StdArc, NaturalShortestFirstQueue<StdArc::StateId, StdArc::Weight>, AnyArcFilter<StdArc>>
     opts(&state_queue, arc_filter, nshortest, unique, false, kDelta, first_path, weight_threshold, state_threshold);
 
-#ifdef COMPOSITIN_TIMES
+#ifdef COMPOSITION_TIMES
   float time_started = get_cpu_time();
 #endif
 
@@ -324,7 +324,7 @@ std::unique_ptr<SVF> Composition::compose_and_search(string input_str,
 
     std::unique_ptr<StdComposeFst> composed = lazy_compose(input_str);
 
-#ifdef COMPOSITIN_TIMES
+#ifdef COMPOSITION_TIMES
     float compose_time = get_cpu_time();
     cerr << "Compose Time: " << (compose_time-time_started) << endl;
 #endif
@@ -333,7 +333,7 @@ std::unique_ptr<SVF> Composition::compose_and_search(string input_str,
     ShortestPath(*composed, nbest_transducer.get(), &distance, opts);
     composed.reset();
 
-#ifdef COMPOSITIN_TIMES
+#ifdef COMPOSITION_TIMES
     float search_time = get_cpu_time();
     cerr << "Search Time: " << (search_time - compose_time) << endl;
 #endif
@@ -341,7 +341,7 @@ std::unique_ptr<SVF> Composition::compose_and_search(string input_str,
 
     std::unique_ptr<SVF> composed = eager_compose(input_str);
 
-#ifdef COMPOSITIN_TIMES
+#ifdef COMPOSITION_TIMES
     float compose_time = get_cpu_time();
     cerr << "Compose Time: " << (compose_time-time_started) << endl;
 #endif
@@ -358,13 +358,13 @@ std::unique_ptr<SVF> Composition::compose_and_search(string input_str,
     ShortestPath(*composed, nbest_transducer.get(), &distance, opts);
     composed.reset();
 
-#ifdef COMPOSITIN_TIMES
+#ifdef COMPOSITION_TIMES
     float search_time = get_cpu_time();
     cerr << "Search Time: " << (search_time - compose_time) << endl;
 #endif
   }
 
-#ifdef COMPOSITIN_TIMES
+#ifdef COMPOSITION_TIMES
   /*
   if (getrusage(RUSAGE_SELF, &this->usage) < 0) {
     std::perror("cannot get usage statistics");
@@ -391,7 +391,7 @@ std::unique_ptr<StdComposeFst> Composition::lazy_compose(string input_str) {
   SVF *input2 = this->lexicon_transducer;
   SVF *input3 = this->morphology_transducer;
 
-#ifdef COMPOSITIN_TIMES
+#ifdef COMPOSITION_TIMES
   float time_started = get_cpu_time();
 #endif
     
@@ -400,7 +400,7 @@ std::unique_ptr<StdComposeFst> Composition::lazy_compose(string input_str) {
   std::unique_ptr<SVF> input_transducer = create_input_transducer(input_str);
   ArcSort(input_transducer.get(), StdOLabelCompare()); // really necessary on both sides?
 
-#ifdef COMPOSITIN_TIMES
+#ifdef COMPOSITION_TIMES
   float time_created = get_cpu_time();
   cerr << "Create Time: " << (time_created-time_started) << endl;
 #endif
@@ -425,7 +425,7 @@ std::unique_ptr<StdComposeFst> Composition::lazy_compose(string input_str) {
   //delayed_result2 = new ComposeFst<StdArc>(input_transducer, (input3 ? *delayed_result2 : delayed_result), opts);
   delayed_result.reset(new StdComposeFst(*input_transducer, *delayed_result, opts));
     
-#ifdef COMPOSITIN_TIMES
+#ifdef COMPOSITION_TIMES
   float time_composed = get_cpu_time();
   cerr << "Compose Time: " << (time_composed - time_created) << endl;
 #endif
@@ -451,13 +451,13 @@ std::unique_ptr<SVF> Composition::eager_compose(SVF *input_transducer) {
   SVF *input2 = this->lexicon_transducer;
   SVF *input3 = this->morphology_transducer;
 
-#ifdef COMPOSITIN_TIMES
+#ifdef COMPOSITION_TIMES
   float time_started = get_cpu_time();
 #endif
     
   ArcSort(input_transducer, StdOLabelCompare()); // really necessary on both sides?
 
-#ifdef COMPOSITIN_TIMES
+#ifdef COMPOSITION_TIMES
   float time_created = get_cpu_time();
   cerr << "Create Time: " << (time_created-time_started) << endl;
 #endif
@@ -476,7 +476,7 @@ std::unique_ptr<SVF> Composition::eager_compose(SVF *input_transducer) {
     Compose(*result, *input3, result.get());
   }
 
-#ifdef COMPOSITIN_TIMES
+#ifdef COMPOSITION_TIMES
   float time_composed = get_cpu_time();
   cerr << "Compose Time: " << (time_composed - time_created) << endl;
 #endif
@@ -499,7 +499,7 @@ std::unique_ptr<SVF> Composition::eager_compose(string input_str) {
   SVF *input2 = this->lexicon_transducer;
   SVF *input3 = this->morphology_transducer;
 
-#ifdef COMPOSITIN_TIMES
+#ifdef COMPOSITION_TIMES
   float time_started = get_cpu_time();
 #endif
     
@@ -508,7 +508,7 @@ std::unique_ptr<SVF> Composition::eager_compose(string input_str) {
   std::unique_ptr<SVF> input_transducer = create_input_transducer(input_str);
   ArcSort(input_transducer.get(), StdOLabelCompare()); // really necessary on both sides?
     
-#ifdef COMPOSITIN_TIMES
+#ifdef COMPOSITION_TIMES
   float time_created = get_cpu_time();
   cerr << "Create Time: " << (time_created-time_started) << endl;
 #endif
@@ -519,17 +519,32 @@ std::unique_ptr<SVF> Composition::eager_compose(string input_str) {
 
   Compose(*input_transducer, *input1, result.get());
 
+#ifdef COMPOSITION_TIMES
+  float time_composed1 = get_cpu_time();
+  cerr << "Compose1 Time: " << (time_composed1 - time_created) << endl;
+#endif
+
   if (input2) {
     //ArcSort(result, StdOLabelCompare());
     Compose(*result, *input2, result.get());
   }
+
+#ifdef COMPOSITION_TIMES
+  float time_composed2 = get_cpu_time();
+  cerr << "Compose2 Time: " << (time_composed2 - time_composed1) << endl;
+#endif
 
   if (input3) {
     //ArcSort(result, StdOLabelCompare());
     Compose(*result, *input3, result.get());
   }
 
-#ifdef COMPOSITIN_TIMES
+#ifdef COMPOSITION_TIMES
+  float time_composed3 = get_cpu_time();
+  cerr << "Compose3 Time: " << (time_composed3 - time_composed2) << endl;
+#endif
+
+#ifdef COMPOSITION_TIMES
   float time_composed = get_cpu_time();
   cerr << "Compose Time: " << (time_composed - time_created) << endl;
 #endif
@@ -543,7 +558,7 @@ std::unique_ptr<SVF> Composition::eager_compose(string input_str) {
 
 std::unique_ptr<SVF> Composition::backoff_result(SVF *input_transducer, SVF *output_transducer) {
 
-#ifdef COMPOSITIN_TIMES
+#ifdef COMPOSITION_TIMES
   float time_started = get_cpu_time();
 #endif
   
@@ -556,7 +571,7 @@ std::unique_ptr<SVF> Composition::backoff_result(SVF *input_transducer, SVF *out
   // disjoin result with input (acts as a rejection threshold):
   Union(output_transducer, *input_transducer); // faster in that direction
 
-#ifdef COMPOSITIN_TIMES
+#ifdef COMPOSITION_TIMES
   float time_backoff = get_cpu_time();
   cerr << "Backoff Time: " << (time_backoff - time_started) << endl;
 #endif
@@ -575,9 +590,9 @@ std::unique_ptr<SVF> Composition::backoff_result(SVF *input_transducer, SVF *out
   Determinize(*output_transducer, result.get(), DeterminizeOptions<StdArc>(DETERMINIZE_DISAMBIGUATE));
   Decode(result.get(), codec);
     
-#ifdef COMPOSITIN_TIMES
+#ifdef COMPOSITION_TIMES
   float time_determinized = get_cpu_time();
-  cerr << "Determinize Time: " << (time_determinized - time_composed) << endl;
+  cerr << "Determinize Time: " << (time_determinized - time_backoff) << endl;
 #endif
     
   return std::move(result);

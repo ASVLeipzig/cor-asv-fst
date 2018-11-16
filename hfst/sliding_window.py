@@ -475,7 +475,7 @@ def create_result_transducer(input_str, window_size, words_per_window, error_tra
 
     #lexicon_transducer.repeat_n(words_per_window)
 
-    start = time.time()
+    start = time.clock()
 
     input_transducers = prepare_input(input_str, window_size, flag_encoder, as_transducer=True)
     output_transducers = []
@@ -483,7 +483,7 @@ def create_result_transducer(input_str, window_size, words_per_window, error_tra
         results = compose_and_search(input_transducer, error_transducer, lexicon_transducer, result_num, flag_encoder, composition=composition)
         output_transducers.append(results)
     
-    after_composition = time.time()
+    after_composition = time.clock()
 
     #complete_output = combine_results(output_list, window_size)
     #complete_output = remove_redundant_paths(complete_output)
@@ -491,7 +491,7 @@ def create_result_transducer(input_str, window_size, words_per_window, error_tra
     complete_output = combine_results(output_transducers, window_size, flag_encoder)
     complete_output = hfst.HfstTransducer(complete_output)
     
-    after_combination = time.time()
+    after_combination = time.clock()
 
     logging.info('Composition Time: %f', after_composition - start)
     logging.info('Combination Time: %f', after_combination - after_composition)
@@ -844,11 +844,11 @@ def window_size_1_2(input_str, error_transducer, lexicon_transducer, flag_encode
     window_1.disjunct(window_2)
     complete_output_basic = hfst.HfstBasicTransducer(window_1)
 
-    before_merge = time.time()
+    before_merge = time.clock()
 
     complete_merge(complete_output_basic, flag_encoder)
 
-    after_merge = time.time()
+    after_merge = time.clock()
     logging.info('Merge Time: %f', after_merge - before_merge)
 
     complete_output = hfst.HfstTransducer(complete_output_basic)
@@ -928,7 +928,7 @@ class FlagEncoder:
 
 def main():
 
-    start = time.time()
+    start = time.clock()
 
     # command line options
     parser = argparse.ArgumentParser(description='OCR post-correction ocrd-cor-asv-fst one-shot tool')
@@ -1043,7 +1043,7 @@ def main():
                 composition = pyComposition(error_f.name, lexicon_f.name, args.result_num, args.rejection_weight)
                 logging.debug(composition)
                 
-                preparation_done = time.time()
+                preparation_done = time.clock()
                 logging.info('Preparation Time: %f', preparation_done - start)
                 
                 # apply correction using Composition Object
@@ -1051,7 +1051,7 @@ def main():
 
     else:
 
-        preparation_done = time.time()
+        preparation_done = time.clock()
         logging.info('Preparation Time: %f', preparation_done - start)
 
         # apply correction directly in hfst
