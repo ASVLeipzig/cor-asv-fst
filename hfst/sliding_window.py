@@ -3,6 +3,7 @@ import hfst
 import time
 import math
 import string
+import os
 import sys
 import traceback
 import tempfile
@@ -127,11 +128,12 @@ def compose_and_search(input, error_transducer, lexicon_transducer, result_num, 
             filename = composition.correct_string('\n'.join(input)) # StringCompiler for SYMBOL splits at newline (fst_field_separator)
         else: # isinstance(input, hfst.HfstTransducer)
             #filename = composition.correct_transducer_string(input_transducer...) # not implemented yet
-            with tempfile.NamedTemporaryFile() as f:
+            with tempfile.NamedTemporaryFile(prefix='cor-asv-fst-sw-input') as f:
                 #helper.save_transducer(f.name, input_transducer)
                 write_fst(f.name, input)
                 filename = composition.correct_transducer_file(f.name)
         result_fst = helper.load_transducer(filename)
+        os.unlink(filename)
 
     else: # compose using HFST
         
@@ -1042,10 +1044,12 @@ def main():
 
         # write lexicon and error transducer files in OpenFST format
         # (cannot use one file for both with OpenFST::Read)
-        with tempfile.NamedTemporaryFile() as error_f:
-            with tempfile.NamedTemporaryFile() as lexicon_f:
+        with tempfile.NamedTemporaryFile(prefix='cor-asv-fst-sw-error') as error_f:
+            with tempfile.NamedTemporaryFile(prefix='cor-asv-fst-sw-lexicon') as lexicon_f:
                 write_fst(error_f.name, error_transducer)
                 write_fst(lexicon_f.name, lexicon_transducer)
+                #write_fst('output/error.fst', error_transducer)
+                #write_fst('output/lexicon.fst', lexicon_transducer)
                 
                 # generate Composition Object
                 composition = pyComposition(error_f.name, lexicon_f.name, args.result_num, args.rejection_weight)
