@@ -4,6 +4,7 @@ import time
 import math
 import string
 import sys
+import traceback
 import tempfile
 import argparse
 import logging
@@ -318,6 +319,9 @@ def merge_states(basic_transducer, state_list, predecessor_dict):
                 logging.warn('merge would add loop at %d (%s:%s::%f)', succ,
                             input_symbol, output_symbol, transition.get_weight())
     
+    # update flag_state_dict:
+    for state in state_list[1:]:
+        state_list.remove(state)
 
 def write_fst(filename, fst):
     """Write fst to file."""
@@ -331,6 +335,12 @@ def write_fst(filename, fst):
 
     return
 
+def next_flag_state(flag_state_dict, start, flag_encoder):
+    for i in range(start, flag_encoder.max_input_int):
+        flag = flag_encoder.encode(i+1)
+        if flag in flag_state_dict:
+            return flag_state_dict[flag]
+    raise Exception('cannot get next flag states for window merge\n' + traceback.format_exc())
 
 def combine_results(result_list, window_size, flag_encoder):
     """Combine windows' results into one result transducer.
@@ -365,10 +375,8 @@ def combine_results(result_list, window_size, flag_encoder):
     #print('final states', final_states)
 
     # merge states in initial transducer
-    merge_list = flag_state_dict[flag_encoder.encode(1)]
+    merge_list = next_flag_state(flag_state_dict, 0, flag_encoder)
     merge_states(result_fst, merge_list, predecessor_dict)
-    # update flag_state_dict
-    flag_state_dict[flag_encoder.encode(1)] = [merge_list[0]]
 
     #print('PARTIAL RESULT PATHS')
     #print_output_paths(starting_fst)
@@ -388,8 +396,7 @@ def combine_results(result_list, window_size, flag_encoder):
             result_fst.remove_final_weight(state)
 
         # determine append states and set them final
-        append_flag = flag_encoder.encode(i+1)
-        append_states = flag_state_dict[append_flag]
+        append_states = next_flag_state(flag_state_dict, i, flag_encoder)
         for state in append_states:
             result_fst.set_final_weight(state, 0.0)
 
