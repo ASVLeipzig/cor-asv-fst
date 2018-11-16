@@ -1,9 +1,13 @@
 from functools import reduce
-import spacy
+import argparse
+import re
+import spacy # to install models, do: `python -m spacy download de` after installation
+import spacy.tokenizer
+
 import helper
 
 
-def create_lexicon(line_dict, nlp):
+def create_lexicon(lines, nlp):
     """Create lexicon with frequencies from dict of lines. Words and punctation marks
     are inserted into separate dicts."""
 
@@ -12,25 +16,27 @@ def create_lexicon(line_dict, nlp):
     # zusammengesetzte Zeilen für die Erstellung des Lexikons nutzen.
     # TODO: Groß-/Kleinschreibung wie behandeln? Momentan wird jedes
     # Wort in der kleingeschriebenen und der großgeschriebene Variante
-    # zum Lexikon hinzugefügt. Später vermutlich eher durch sowas wie
-    # {CAP}?
+    # zum Lexikon hinzugefügt (mit gleicher Häufigkeit).
+    # Später vermutlich eher durch sowas wie {CAP}?
 
     lexicon_dict = {}
     punctation_dict = {}
     open_bracket_dict = {}
     close_bracket_dict = {}
-
-    lines = []
-
-    if type(line_dict) is dict:
-        lines = list(line_dict.values())
-    elif type(line_dict) is list:
-        lines = line_dict
+    umlautset = set("äöüÄÖÜ")
+    umlauttrans = str.maketrans({'ä': 'aͤ', 'ö': 'oͤ', 'ü': 'uͤ', 'Ä': 'Aͤ', 'Ö': 'Oͤ', 'Ü': 'Uͤ'})
+    num_re = re.compile('[0-9]{1,3}([,.]?[0-9]{3})*([.,][0-9]*)?')
+    
+    if type(lines) is dict:
+        lines = lines.values()
+    elif hasattr(lines, '__iter__'): # accept generators
+        lines = map(lambda x: x[1], lines)
     else:
-        print('Creating lexicon failed: no dict or list given, but ', type(line_dict))
+        raise Exception('Creating lexicon failed: %s given, but dict or list expected' % type(lines))
 
     #for line in lines[0:100]:
     for line in lines:
+        #print(line)
 
         if len(line) < 3:
             continue
@@ -71,22 +77,25 @@ def create_lexicon(line_dict, nlp):
 
                 # numbers are normalized to 1 to be replaced by a number
                 # transducer later, but the length of a number is preserved
-                if text.isdigit():
+                if text.isdigit() or num_re.match(text):
                     text = len(text) * '1'
                     lexicon_dict[text] = lexicon_dict.setdefault(text, 0) + 1
 
                 else:
-
+                    # normalize umlauts to decomposed form (but precomposed variant will be allowed at runtime too):
+                    if umlautset.intersection(set(text)):
+                        text = text.translate(umlauttrans)
                     # add a word both uppercase and lowercase
+                    # FIXME: instead gather statistics separately, then keep only most frequent form (but allow titlecase after sentence punctuation or beginning of line at runtime too)
                     lexicon_dict[text] = lexicon_dict.setdefault(text, 0) + 1
+                    # despite Python #6412, str.istitle() and str.title() are still buggy with combining diacritics # if token.text.istitle():
                     if token.text[0].isupper():
-                        #print(text.lower())
-                        lexicon_dict[text.lower()] = lexicon_dict.setdefault(text.lower(), 0) + 1
+                        recap = text.lower()
+                        lexicon_dict[recap] = lexicon_dict.setdefault(recap, 0) + 1
                     else:
-                        if len(text) >= 2:
-                            lexicon_dict[text[0].upper() + text[1:]] = lexicon_dict.setdefault(text[0].upper() + text[1:], 0) + 1
-                        else:
-                            lexicon_dict[text[0].upper()] = lexicon_dict.setdefault(text[0].upper(), 0) + 1
+                        # despite Python #6412, str.istitle() and str.title() are still buggy with combining diacritics # recap = text.title()
+                        recap = text.capitalize()
+                        lexicon_dict[recap] = lexicon_dict.setdefault(recap, 0) + 1
 
     return lexicon_dict, punctation_dict, open_bracket_dict, close_bracket_dict
 
@@ -97,10 +106,16 @@ def main():
     to txt files with word and (negative logarithm of) relative_frequency
     tab-separated."""
 
+    parser = argparse.ArgumentParser(description='OCR post-correction ocrd-cor-asv-fst lexicon extractor')
+    parser.add_argument('directory', metavar='PATH', help='directory for input files')
+    parser.add_argument('-G', '--gt-suffix', metavar='SUF', type=str, default='gt.txt', help='clean (Ground Truth) filenames suffix')
+    args = parser.parse_args()
+
     # load dta19-reduced data
     #path = '../dta19-reduced/traindata/'
-    path = '../dta19-reduced/testdata/'
-    gt_dict = helper.create_dict(path, 'gt')
+    #path = '../dta19-reduced/testdata/'
+    gt_filenames = helper.get_filenames(args.directory + "/", args.gt_suffix)
+    gt_data = helper.generate_content(args.directory + "/", gt_filenames)
 
     # load dta-komplett
     #dta_file = '../Daten/ngram-model/gesamt_dta.txt'
@@ -114,8 +129,15 @@ def main():
 
     # get dicts containing a lexicon of words, punctuation, opening/closing
     # brackets
-    nlp = spacy.load('de')
-    lexicon_dict, punctuation_dict, open_bracket_dict, close_bracket_dict = create_lexicon(gt_dict, nlp)
+    spacy.prefer_gpu()
+    nlp = spacy.load('de', disable=['parser', 'ner']) # everything we don't have at runtime either
+    infix_re = spacy.util.compile_infix_regex(nlp.Defaults.infixes + ['—']) # numeric dash: (?<=[0-9])—(?=[0-9])
+    nlp.tokenizer = spacy.tokenizer.Tokenizer(nlp.vocab,
+                                              token_match=nlp.tokenizer.token_match,
+                                              prefix_search=nlp.tokenizer.prefix_search,
+                                              suffix_search=nlp.tokenizer.suffix_search,
+                                              infix_finditer=infix_re.finditer)
+    lexicon_dict, punctuation_dict, open_bracket_dict, close_bracket_dict = create_lexicon(gt_data, nlp)
 
     #line_id = '05110'
 
@@ -125,16 +147,14 @@ def main():
     #print(foo4_dict[line_id])
 
     # get relative frequency of absolute counts
-    for dic in lexicon_dict, punctuation_dict, open_bracket_dict, close_bracket_dict:
-        dic = helper.convert_to_relative_freq(dic)
-
-    #print(lexicon_dict['der'])
-    #print(punctation_dict[','])
-
     # write dicts to txt files: word tab relative_frequency
+    lexicon_dict = helper.convert_to_relative_freq(lexicon_dict)
     helper.write_lexicon(lexicon_dict, 'dta_lexicon.txt')
+    punctuation_dict = helper.convert_to_relative_freq(punctuation_dict)
     helper.write_lexicon(punctuation_dict, 'dta_punctuation.txt')
+    open_bracket_dict = helper.convert_to_relative_freq(open_bracket_dict)
     helper.write_lexicon(open_bracket_dict, 'open_bracket.txt')
+    close_bracket_dict = helper.convert_to_relative_freq(close_bracket_dict)
     helper.write_lexicon(close_bracket_dict, 'close_bracket.txt')
 
 if __name__ == '__main__':

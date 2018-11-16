@@ -35,7 +35,10 @@ def generate_content(directory, filenames):
 
     for x in filenames:
         with open(directory + x) as f:
-            yield (x.split('.')[0], f.read().strip())
+            for line in f:
+                line = line.strip()
+                if line:
+                    yield (x.split('.')[0], line)
 
 
 def create_dict(directory, suffix):
@@ -53,13 +56,20 @@ def create_dict(directory, suffix):
     return result_dict
 
 
-def convert_to_relative_freq(lexicon_dict):
+def convert_to_relative_freq(lexicon_dict, freq_threshold=2e-6): # /13 # 6e-6/12 # 1e-5/11.5
     """Convert counts of dict: word -> count into dict with relative
     frequencies: word -> relative_frequency."""
 
-    summed_freq = sum(list(lexicon_dict.values()))
+    total_freq = sum(lexicon_dict.values())
+    print('converting dictionary of %d tokens / %d types' % (total_freq, len(lexicon_dict)))
     for key in list(lexicon_dict.keys()):
-        lexicon_dict[key] = lexicon_dict[key] / summed_freq
+        abs_freq = lexicon_dict[key]
+        rel_freq = abs_freq / total_freq
+        if abs_freq <= 3 and rel_freq < freq_threshold:
+            print('pruning rare word form "%s" (%d/%f)' % (key, abs_freq, rel_freq))
+            del lexicon_dict[key]
+        else:
+            lexicon_dict[key] = rel_freq
 
     return lexicon_dict
 
@@ -69,8 +79,9 @@ def write_lexicon(lexicon_dict, filename, log=True):
     a txt file at filename. If log is set, the negative logarithm of the
     relative_frequency is calculated (useful for transducer creation)."""
 
-    lexicon_list = list(lexicon_dict.items())
+    lexicon_list = lexicon_dict.items()
 
+    print('writing lexicon %s' % filename)
     with open(filename, 'w') as f:
         for word, freq in lexicon_list:
             if word == '':
@@ -108,17 +119,15 @@ def transducer_from_list(freq_list):
     lexicon_transducer = hfst.HfstBasicTransducer()
     tok = hfst.HfstTokenizer()
 
-    counter = 0
-
-    for (istr, ostr, weight) in freq_list:
+    for i, (istr, ostr, weight) in enumerate(freq_list):
         lexicon_transducer.disjunct(tok.tokenize(istr), weight)
         #acceptor = hfst.regex(istr.replace('.', '%.') + ':' + ostr.replace('.', '%.') + '::' + str(weight))
         #lexicon_transducer.disjunct(acceptor)
 
-        counter += 1
-        if counter % 10000 == 0:
-            print(counter)
+        if i % 10000 == 0:
+            print('wrote lemma nr %d' % i)
 
+    print('wrote lemma nr %d' % i)
     return lexicon_transducer
 
 
