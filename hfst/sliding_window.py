@@ -853,7 +853,6 @@ def window_size_1_2(input_str, error_transducer, lexicon_transducer, flag_encode
 
     complete_output = hfst.HfstTransducer(complete_output_basic)
 
-    #complete_output.prune()
     #complete_output.minimize()
 
     return complete_output
@@ -1062,7 +1061,6 @@ def main():
 
     #write_fst('output/output_str.nondet.hfst', complete_output)
 
-    complete_output.prune()
     complete_output.determinize()
 
     #write_fst('output/output_str.hfst', complete_output)
@@ -1081,6 +1079,8 @@ def main():
     logging.debug('COMPLETE OUTPUT NO FLAGS')
     print_shortest_path(complete_output)
 
+    logging.info(list(complete_output.extract_shortest_paths(output='text').items())[0][0].replace(hfst.EPSILON, ''))
+    
     ## load and apply language model
 
     lm_file = 'fst/lang_mod_theta_0_000001.mod.modified.hfst'
@@ -1100,7 +1100,8 @@ def main():
 
     logging.debug('LANGUAGE MODEL OUTPUT')
     print_output_paths(complete_output)
-
+    
+    logging.info(list(complete_output.extract_shortest_paths(output='text').items())[0][0].replace(hfst.EPSILON, ''))
 
 if __name__ == '__main__':
     main()
