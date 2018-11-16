@@ -38,15 +38,16 @@ def prepare_input(input_str, window_size, flag_encoder, as_transducer=False):
     so windows can be recombined afterwards.
     """
 
-    windows = input_str.split(' ')
+    windows = input_str.strip().split(' ')
 
     # combine neighbouring "words", when one of the "words" is merely
     # a single punctuation character
+    # TODO: ensure tokenization is consistent with create_lexicon (spacy + our rules)
 
     new_windows = []
     last_word = ''
     for word in windows:
-        if len(word) == 1 and not word.isalnum():
+        if len(word) == 1 and not word.isalnum() and not word in '—':
             if last_word != '':
                 last_word = last_word + ' ' + word
             else:
