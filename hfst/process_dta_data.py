@@ -131,7 +131,11 @@ def main():
     # brackets
     spacy.prefer_gpu()
     nlp = spacy.load('de', disable=['parser', 'ner']) # everything we don't have at runtime either
-    infix_re = spacy.util.compile_infix_regex(nlp.Defaults.infixes + ['—']) # numeric dash: (?<=[0-9])—(?=[0-9])
+    infix_re = spacy.util.compile_infix_regex(nlp.Defaults.infixes +
+                                              ['—', # numeric dash: (?<=[0-9])—(?=[0-9])
+                                               '/']) # maybe more restrictive?
+    suffix_re = spacy.util.compile_suffix_regex(nlp.Defaults.suffixes +
+                                                ('/',)) # maybe more restrictive?
     nlp.tokenizer = spacy.tokenizer.Tokenizer(nlp.vocab,
                                               token_match=nlp.tokenizer.token_match,
                                               prefix_search=nlp.tokenizer.prefix_search,
