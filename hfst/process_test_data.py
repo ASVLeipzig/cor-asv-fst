@@ -58,10 +58,14 @@ def main():
         error_transducer, lexicon_transducer = sw.load_transducers_bracket(
             'fst/max_error_3_context_23_dta.hfst',
             #'fst/max_error_3_context_23_dta19-reduced.' + args.input_suffix[:-3] + 'hfst',
-            'fst/punctuation_transducer_dta.hfst',
-            'fst/lexicon_transducer_dta.hfst',
-            'fst/open_bracket_transducer_dta.hfst',
-            'fst/close_bracket_transducer_dta.hfst',
+            'fst/punctuation_transducer_dta19-testdata.hfst',
+            #'fst/punctuation_transducer_dta19-traindata.hfst',
+            'fst/lexicon_transducer_dta19-testdata.hfst',
+            #'fst/lexicon_transducer_dta19-traindata.hfst',
+            'fst/open_bracket_transducer_dta19-testdata.hfst',
+            #'fst/open_bracket_transducer_dta19-traindata.hfst',
+            'fst/close_bracket_transducer_dta19-testdata.hfst',
+            #'fst/close_bracket_transducer_dta19-traindata.hfst',
             flag_encoder,
             composition_depth=args.composition_depth,
             words_per_window=args.words_per_window)
@@ -71,7 +75,8 @@ def main():
         error_transducer, lexicon_transducer = sw.load_transducers_inter_word(
             'fst/max_error_3_context_23_dta.hfst',
             #'fst/max_error_3_context_23_dta19-reduced.' + args.input_suffix[:-3] + 'hfst',
-            'fst/lexicon_transducer_dta.hfst',
+            'fst/lexicon_transducer_dta19-testdata.hfst',
+            #'fst/lexicon_transducer_dta19-traindata.hfst',
             'fst/left_punctuation.hfst',
             'fst/right_punctuation.hfst',
             flag_encoder,
@@ -84,7 +89,8 @@ def main():
             'fst/preserve_punctuation_max_error_3_context_23.hfst',
             #'fst/max_error_3_context_23_preserve_punctuation_dta19-reduced.' + args.input_suffix[:-3] + 'hfst',
             'fst/any_punctuation_no_space.hfst',
-            'fst/lexicon_transducer_dta.hfst',
+            'fst/lexicon_transducer_dta19-testdata.hfst',
+            #'fst/lexicon_transducer_dta19-traindata.hfst',
             flag_encoder,
             composition_depth=args.composition_depth,
             words_per_window=args.words_per_window)
