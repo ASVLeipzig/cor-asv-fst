@@ -3,6 +3,8 @@ import hfst
 import time
 import math
 import string
+import unicodedata # for canonical normal form, for combining characters
+from functools import reduce
 import os
 import sys
 import traceback
@@ -39,7 +41,9 @@ def prepare_input(input_str, window_size, flag_encoder, as_transducer=False):
     so windows can be recombined afterwards.
     """
 
-    windows = input_str.strip().split(' ')
+    # remove surrounding whitespace, then normalize to canonical form
+    # (i.e. use pre-composed characters where available)
+    windows = unicodedata.normalize('NFC', input_str.strip()).split(' ')
 
     # combine neighbouring "words", when one of the "words" is merely
     # a single punctuation character
@@ -67,7 +71,13 @@ def prepare_input(input_str, window_size, flag_encoder, as_transducer=False):
         window_str = windows[i:i + window_size]
         window = [flag_encoder.encode(i)]
         for j, word in enumerate(window_str):
-            window.extend(word) # character by character
+            # window.extend(word) # character by character
+            # this breaks with combining characters like U+0364,
+            # which Python treats like separate characters, and
+            # unicodedata's NFC (canonical normal form) cannot
+            # normalize.
+            # so instead, we must fit those explicitly:
+            window.extend(reduce(lambda l, c: l + ([l.pop()+c] if unicodedata.combining(c) else [c]), word, []))
             window.append(' ')
             window.append(flag_encoder.encode(i+j+1))
         if as_transducer:
@@ -137,8 +147,9 @@ def compose_and_search(input, error_transducer, lexicon_transducer, result_num, 
 
     else: # compose using HFST
         
-        input_transducer = create_input_transducer(input)
-        result_fst = input_transducer
+        if isinstance(input, list):
+            input_transducer = create_input_transducer(input)
+        result_fst = input_transducer.copy()
 
         #logging.info("input_str: %s ", input_str)
         #print("compose transducers")
