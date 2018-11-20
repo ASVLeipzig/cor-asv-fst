@@ -1,6 +1,7 @@
 #include "composition_cpp.h"
 
 //#define COMPOSITION_TIMES 1 /* print cputime measurements on stderr? */
+//#define VERIFY_TRANSDUCERS 1 /* verify incoming and outgoing transducers? */
 
 /* Instantiate the OpenFST-based string correction:
    - read error transducer from the given filename,
@@ -30,7 +31,7 @@ Composition::Composition(const string &error_file, const string &lexicon_file, i
     this->symbol_table = MergeSymbolTable(output_symbols, input_symbols, &relabel);
 
     if (relabel) {
-      Relabel(lexicon_transducer, this->symbol_table, this->symbol_table);
+      Relabel(lexicon_transducer, this->symbol_table, NULL);
     }
 
     lexicon_transducer->SetOutputSymbols(this->symbol_table);
@@ -41,8 +42,8 @@ Composition::Composition(const string &error_file, const string &lexicon_file, i
 
     /*
     // write symbol table to file
-    this->symbol_table.WriteText("symbol_table.txt"); 
-    this->symbol_table.Write("symbol_table.bin"); 
+    this->symbol_table->WriteText("symbol_table.txt"); 
+    this->symbol_table->Write("symbol_table.bin"); 
     */
     
     // perfom arc sort
@@ -102,15 +103,27 @@ string Composition::correct_transducer_file(const string input_transducer_filena
     throw std::runtime_error("cannot read input transducer file");
   }
 
-  // relabel input transducer with big symbol table
-  Relabel(input_transducer.get(), this->symbol_table, this->symbol_table);
+  // merge and relabel input transducer with big symbol table
+  bool relabel;
 
-  input_transducer->SetInputSymbols(this->symbol_table);
+  this->symbol_table = MergeSymbolTable(*this->symbol_table, *input_transducer->OutputSymbols(), &relabel);
+
+  if (relabel)
+    Relabel(input_transducer.get(), nullptr, this->symbol_table);
+
   input_transducer->SetOutputSymbols(this->symbol_table);
+  error_transducer->SetInputSymbols(this->symbol_table);
+  error_transducer->SetOutputSymbols(this->symbol_table);
+  lexicon_transducer->SetInputSymbols(this->symbol_table);
+  lexicon_transducer->SetOutputSymbols(this->symbol_table);
 
   std::unique_ptr<SVF> nbest_transducer =
     compose_and_search(input_transducer.get(),
                        false); // lazy
+#ifdef VERIFY_TRANSDUCERS
+  if (!Verify(*nbest_transducer))
+    throw std::runtime_error("composition result is bad");
+#endif
     
   //string filename = string("output/") +  input_transducer_filename + string(".fst");
   // FIXME: use StdVectorFst::FstToString() here and wrap with HfstInputStream(std::istringstream) in Cython
@@ -148,6 +161,10 @@ string Composition::correct_transducer_string(const string input_transducer_str)
   std::unique_ptr<SVF> nbest_transducer =
     compose_and_search(input_transducer.get(),
                        false); // lazy
+#ifdef VERIFY_TRANSDUCERS
+  if (!Verify(*nbest_transducer))
+    throw std::runtime_error("composition result is bad");
+#endif
 
   // FIXME: use StdVectorFst::FstToString() here and wrap with HfstInputStream(std::istringstream) in Cython
   string filename = std::tmpnam(NULL);
@@ -173,7 +190,12 @@ string Composition::correct_string(const string input_str) {
   std::unique_ptr<SVF> nbest_transducer =
     compose_and_search(input_str,
                        false); // lazy
-    
+
+#ifdef VERIFY_TRANSDUCERS
+  if (!Verify(*nbest_transducer))
+    throw std::runtime_error("composition result is bad");
+#endif
+  
   //string filename = string("output/") +  input_str + string(".fst");
   // FIXME: use StdVectorFst::FstToString() here and wrap with HfstInputStream(std::istringstream) in Cython
   string filename = std::tmpnam(NULL);
@@ -395,9 +417,12 @@ std::unique_ptr<StdComposeFst> Composition::lazy_compose(string input_str) {
   float time_started = get_cpu_time();
 #endif
     
-  const SymbolTable table = *(input1->OutputSymbols());
-    
   std::unique_ptr<SVF> input_transducer = create_input_transducer(input_str);
+
+#ifdef VERIFY_TRANSDUCERS
+  if (!Verify(*input_transducer))
+    throw std::runtime_error("input transducer is bad");
+#endif
   ArcSort(input_transducer.get(), StdOLabelCompare()); // really necessary on both sides?
 
 #ifdef COMPOSITION_TIMES
@@ -454,7 +479,11 @@ std::unique_ptr<SVF> Composition::eager_compose(SVF *input_transducer) {
 #ifdef COMPOSITION_TIMES
   float time_started = get_cpu_time();
 #endif
-    
+
+#ifdef VERIFY_TRANSDUCERS
+  if (!Verify(*input_transducer))
+    throw std::runtime_error("input transducer is bad");
+#endif
   ArcSort(input_transducer, StdOLabelCompare()); // really necessary on both sides?
 
 #ifdef COMPOSITION_TIMES
@@ -503,9 +532,11 @@ std::unique_ptr<SVF> Composition::eager_compose(string input_str) {
   float time_started = get_cpu_time();
 #endif
     
-  const SymbolTable table = *(input1->OutputSymbols());
-    
   std::unique_ptr<SVF> input_transducer = create_input_transducer(input_str);
+#ifdef VERIFY_TRANSDUCERS
+  if (!Verify(*input_transducer))
+    throw std::runtime_error("input transducer is bad");
+#endif
   ArcSort(input_transducer.get(), StdOLabelCompare()); // really necessary on both sides?
     
 #ifdef COMPOSITION_TIMES
@@ -605,6 +636,18 @@ std::unique_ptr<SVF> Composition::backoff_result(SVF *input_transducer, SVF *out
 */
 std::unique_ptr<SVF> Composition::create_input_transducer(string input_str) {
 
+  std::istringstream input_stream(input_str);
+  string token;
+  while (std::getline(input_stream, token, '\n'))
+    if (this->symbol_table->Find(token) < 0) {
+      cerr << "adding previously unknown symbol: " << token << endl;
+      this->symbol_table->AddSymbol(token);
+      this->error_transducer->SetInputSymbols(this->symbol_table);
+      this->error_transducer->SetOutputSymbols(this->symbol_table);
+      this->lexicon_transducer->SetInputSymbols(this->symbol_table);
+      this->lexicon_transducer->SetOutputSymbols(this->symbol_table);
+    }
+  
   std::unique_ptr<SVF> input_transducer = std::make_unique<SVF>();
   //if (not string_compiler(input_str, input_transducer))
   if (not (*string_compiler)(input_str, input_transducer.get()))
