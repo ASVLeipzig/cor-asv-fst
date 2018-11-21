@@ -56,8 +56,11 @@ def main():
     if args.punctuation == 'bracket':
         ## bracketing rules
         error_transducer, lexicon_transducer = sw.load_transducers_bracket(
-            'fst/max_error_3_context_23_dta.hfst',
-            #'fst/max_error_3_context_23_dta19-reduced.' + args.input_suffix[:-3] + 'hfst',
+            'fst/max_error_3_context_23_dta.hfst', # old error model for Fraktur4
+            #'fst/max_error_3_context_23_dta19-reduced.' + args.input_suffix[:-3] + 'hfst', # new error model for chosen output_suffix
+            #'fst/max_error_3_context_23_dta19-reduced.Fraktur4.hfst', # new error model for Fraktur4 (when deviating from chosen output_suffix)
+            #'fst/max_error_3_context_23_dta19-reduced.foo4.hfst', # new error model for foo4 (when deviating from chosen output_suffix)
+            #'fst/max_error_3_context_23_dta19-reduced.deu-frak3.hfst', # new error model for deu-frak3 (when deviating from chosen output_suffix)
             'fst/punctuation_transducer_dta19-testdata.hfst',
             #'fst/punctuation_transducer_dta19-traindata.hfst',
             'fst/lexicon_transducer_dta19-testdata.hfst',
@@ -73,8 +76,13 @@ def main():
     elif args.punctuation == 'lm':
         ## inter-word language model
         error_transducer, lexicon_transducer = sw.load_transducers_inter_word(
-            'fst/max_error_3_context_23_dta.hfst',
-            #'fst/max_error_3_context_23_dta19-reduced.' + args.input_suffix[:-3] + 'hfst',
+            'fst/max_error_3_context_23_dta.hfst', # old error model for Fraktur4
+            #'fst/max_error_3_context_23_dta19-reduced.' + args.input_suffix[:-3] + 'hfst', # new error model for chosen output_suffix
+            #'fst/max_error_3_context_23_dta19-reduced.Fraktur4.hfst', # new error model for Fraktur4 (when deviating from chosen output_suffix)
+            #'fst/max_error_3_context_23_dta19-reduced.foo4.hfst', # new error model for foo4 (when deviating from chosen output_suffix)
+            #'fst/max_error_3_context_23_dta19-reduced.deu-frak3.hfst', # new error model for deu-frak3 (when deviating from chosen output_suffix)
+            #'fst/max_error_3_context_23_dta19-reduced.ocrofraktur.hfst', # new error model for Fraktur4 (when deviating from chosen output_suffix)
+            #'fst/max_error_3_context_23_dta19-reduced.ocrofraktur-jze.hfst', # new error model for Fraktur4 (when deviating from chosen output_suffix)
             'fst/lexicon_transducer_dta19-testdata.hfst',
             #'fst/lexicon_transducer_dta19-traindata.hfst',
             'fst/left_punctuation.hfst',
@@ -86,8 +94,11 @@ def main():
     elif args.punctuation == 'preserve':
         ## no punctuation changes
         error_transducer, lexicon_transducer = sw.load_transducers_preserve_punctuation(
-            'fst/preserve_punctuation_max_error_3_context_23.hfst',
-            #'fst/max_error_3_context_23_preserve_punctuation_dta19-reduced.' + args.input_suffix[:-3] + 'hfst',
+            'fst/preserve_punctuation_max_error_3_context_23_dta.hfst', # old error model for Fraktur4
+            #'fst/max_error_3_context_23_preserve_punctuation_dta19-reduced.' + args.input_suffix[:-3] + 'hfst', # new error model for chosen output_suffix
+            #'fst/max_error_3_context_23_preserve_punctuation_dta19-reduced.Fraktur4.hfst', # new error model for Fraktur4 (when deviating from chosen output_suffix)
+            #'fst/max_error_3_context_23_preserve_punctuation_dta19-reduced.foo4.hfst', # new error model for foo4 (when deviating from chosen output_suffix)
+            #'fst/max_error_3_context_23_preserve_punctuation_dta19-reduced.deu-frak3.hfst', # new error model for deu-frak3 (when deviating from chosen output_suffix)
             'fst/any_punctuation_no_space.hfst',
             'fst/lexicon_transducer_dta19-testdata.hfst',
             #'fst/lexicon_transducer_dta19-traindata.hfst',
@@ -120,11 +131,20 @@ def main():
             
             gt_dict = helper.create_dict(args.directory + "/", 'gt.txt')
             ocr_dict = helper.create_dict(args.directory + "/", args.input_suffix)
+
+            def show_error(exception):
+                logging.error(exception)
             
             results = []
             with mp.Pool(processes=args.processes) as pool:
                 params = list(ocr_dict.items()) #[10:20]
-                results = pool.starmap(process, params)
+                result = pool.starmap_async(process, params, error_callback=show_error)
+                result.wait()
+                if result.successful():
+                    results = result.get()
+                else:
+                    logging.error('error during processing')
+                    exit(1)
             
             for i, (basename, input_str, output_str) in enumerate(results):
                 print("%03d/%03d: %s" % (i+1, len(params), basename))
@@ -140,27 +160,33 @@ def process(basename, input_str):
     global lowercase_transducer, lm_transducer, flag_encoder, args, composition
     
     logging.info('input_str:  %s', input_str)
-    
-    complete_output = sw.window_size_1_2(input_str, None, None, flag_encoder, args.result_num, composition)
-    if not args.apply_lm:
-        complete_output.n_best(1)
-        
-    complete_output = sw.remove_flags(complete_output, flag_encoder)
-    
-    if args.apply_lm:
-        complete_output.output_project()
-        # FIXME: should also be composed via OpenFST library (pyComposition)
-        complete_output.compose(lowercase_transducer)
-        complete_output.compose(lm_transducer)
-        complete_output.input_project()
-    
-    complete_paths = hfst.HfstTransducer(complete_output).extract_paths(max_number=1, max_cycles=0)
-    output_str = list(complete_paths.items())[0][1][0][0].replace(hfst.EPSILON, '') # really necessary?
 
-    logging.info('output_str: %s', output_str)
+    try:
+        complete_output = sw.window_size_1_2(input_str, None, None, flag_encoder, args.result_num, composition)
+        
+        if not args.apply_lm:
+            complete_output.n_best(1)
+
+        complete_output = sw.remove_flags(complete_output, flag_encoder)
+
+        if args.apply_lm:
+            complete_output.output_project()
+            # FIXME: should also be composed via OpenFST library (pyComposition)
+            complete_output.compose(lowercase_transducer)
+            complete_output.compose(lm_transducer)
+            complete_output.input_project()
+
+        complete_paths = hfst.HfstTransducer(complete_output).extract_paths(max_number=1, max_cycles=0)
+        output_str = list(complete_paths.items())[0][1][0][0].replace(hfst.EPSILON, '') # really necessary?
+
+        logging.info('output_str: %s', output_str)
+
+        with open(args.directory + "/" + basename + "." + args.output_suffix, 'w') as f:
+            f.write(output_str)
     
-    with open(args.directory + "/" + basename + "." + args.output_suffix, 'w') as f:
-        f.write(output_str)
+    except Exception as e:
+        logging.exception('exception for window result of "%s"' % input_str)
+        raise e
     
     return basename, input_str, output_str
 
