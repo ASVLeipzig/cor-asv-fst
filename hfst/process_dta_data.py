@@ -108,7 +108,8 @@ def main():
 
     parser = argparse.ArgumentParser(description='OCR post-correction ocrd-cor-asv-fst lexicon extractor')
     parser.add_argument('directory', metavar='PATH', help='directory for input files')
-    parser.add_argument('-G', '--gt-suffix', metavar='SUF', type=str, default='gt.txt', help='clean (Ground Truth) filenames suffix')
+    parser.add_argument('-G', '--gt-suffix', metavar='SUF', type=str, default='gt.txt', help='clean (Ground Truth) filenames suffix') # useful for DTA (.tcf.txt)
+    parser.add_argument('-U', '--use-gpu', action='store_true', default=False, help='use GPU instead of CPU for tokenization (spacy)')
     args = parser.parse_args()
 
     # load dta19-reduced data
@@ -127,9 +128,10 @@ def main():
     #fraktur4_dict = create_dict(path, 'Fraktur4')
     ##foo4_dict = create_dict(path, 'foo4')
 
-    # get dicts containing a lexicon of words, punctuation, opening/closing
-    # brackets
-    spacy.prefer_gpu()
+    # get dicts containing a lexicon of words, punctuation, opening/closing brackets
+    if args.gpu:
+        spacy.prefer_gpu()
+        spacy.util.use_gpu(0)
     nlp = spacy.load('de', disable=['parser', 'ner']) # everything we don't have at runtime either
     infix_re = spacy.util.compile_infix_regex(nlp.Defaults.infixes +
                                               ['—', # numeric dash: (?<=[0-9])—(?=[0-9])
