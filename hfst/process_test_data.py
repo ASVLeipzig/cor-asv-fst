@@ -162,27 +162,33 @@ def process(basename, input_str):
     logging.info('input_str:  %s', input_str)
 
     try:
-        complete_output = sw.window_size_1_2(input_str, None, None, flag_encoder, args.result_num, composition)
+        complete_outputs = sw.window_size_1_2(input_str, None, None, flag_encoder, args.result_num, composition)
         
-        if not args.apply_lm:
-            complete_output.n_best(1)
+        for i, complete_output in enumerate(complete_outputs):
+            if not args.apply_lm:
+                complete_output.n_best(1)
 
-        complete_output = sw.remove_flags(complete_output, flag_encoder)
+            complete_output = sw.remove_flags(complete_output, flag_encoder)
 
-        if args.apply_lm:
-            complete_output.output_project()
-            # FIXME: should also be composed via OpenFST library (pyComposition)
-            complete_output.compose(lowercase_transducer)
-            complete_output.compose(lm_transducer)
-            complete_output.input_project()
+            if args.apply_lm:
+                complete_output.output_project()
+                # FIXME: should also be composed via OpenFST library (pyComposition)
+                complete_output.compose(lowercase_transducer)
+                complete_output.compose(lm_transducer)
+                complete_output.input_project()
 
-        complete_paths = hfst.HfstTransducer(complete_output).extract_paths(max_number=1, max_cycles=0)
-        output_str = list(complete_paths.items())[0][1][0][0].replace(hfst.EPSILON, '') # really necessary?
+            complete_paths = hfst.HfstTransducer(complete_output).extract_paths(max_number=1, max_cycles=0)
+            output_str = list(complete_paths.items())[0][1][0][0].replace(hfst.EPSILON, '') # really necessary?
 
-        logging.info('output_str: %s', output_str)
+            logging.info('output_str: %s', output_str)
 
-        with open(args.directory + "/" + basename + "." + args.output_suffix, 'w') as f:
-            f.write(output_str)
+            if sw.REJECTION_WEIGHT < 0: # for ROC evaluation: multiple output files
+                suffix = args.output_suffix + "." + "rw_" + str(i)
+            else:
+                suffix = args.output_suffix
+
+            with open(args.directory + "/" + basename + "." + suffix, 'w') as f:
+                f.write(output_str)
     
     except Exception as e:
         logging.exception('exception for window result of "%s"' % input_str)

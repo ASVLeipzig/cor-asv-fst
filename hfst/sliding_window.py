@@ -142,8 +142,28 @@ def compose_and_search(input, error_transducer, lexicon_transducer, result_num, 
                 #helper.save_transducer(f.name, input_transducer)
                 write_fst(f.name, input)
                 filename = composition.correct_transducer_file(f.name)
+
         result_fst = helper.load_transducer(filename)
         os.unlink(filename)
+
+        global REJECTION_WEIGHT
+        if REJECTION_WEIGHT < 0: # for ROC evaluation: no backoff_result in pyComposition
+            result_fst.determinize() # fingers crossed!
+            result_fst.remove_epsilons()
+            #result_fst.minimize()
+
+            results_fst = []
+            for weight in [0., 0.01, 0.1, 0.2, 0.3, 0.7, 1., 1.3, 1.5, 1.7, 2., 3., 5., 10., 20.]:
+                REJECTION_WEIGHT = weight
+                one_result_fst = result_fst.copy()
+                # disjunct result with input_fst, but with high transition weights (acts as a rejection threshold):
+                one_result_fst.disjunct(set_transition_weights(input_transducer))
+                one_result_fst.remove_epsilons()
+                results_fst.append(one_result_fst)
+            REJECTION_WEIGHT = -1
+            result_fst = results_fst
+        else:
+            result_fst = [result_fst]
 
     else: # compose using HFST
         
@@ -183,11 +203,14 @@ def compose_and_search(input, error_transducer, lexicon_transducer, result_num, 
         result_fst.disjunct(set_transition_weights(input_transducer))
         result_fst.remove_epsilons()
 
+        result_fst = [result_fst]
+
     return result_fst
 
 
 def set_transition_weights(fst):
     """Sets each transition of the given fst to REJECTION_WEIGHT."""
+    global REJECTION_WEIGHT
 
     basic_fst = hfst.HfstBasicTransducer(fst)
     for state in basic_fst.states():
@@ -418,14 +441,14 @@ def combine_results(result_list, window_size, flag_encoder):
 
         #logging.debug('BEFORE CONCATENATION RESULT PATHS')
         #print_output_paths(result_fst)
-        #write_fst('output/before_concatenation.hfst', result_fst)
+        #write_fst('output/before_concatenation.hfst', hfst.HfstTransducer(result_fst))
 
         # concatenate result fst and partial result
         result_fst = hfst.HfstTransducer(result_fst)
         partial_fst = hfst.HfstTransducer(partial_fst)
 
         result_fst.concatenate(partial_fst)
-        #write_fst('output/partial_result.hfst', fst)
+        #write_fst('output/partial_result.hfst', hfst.HfstTransducer(result_fst))
 
         ##print("number of states :", result_fst.number_of_states())
         #print('PARTIAL RESULT PATHS')
@@ -443,7 +466,7 @@ def combine_results(result_list, window_size, flag_encoder):
         #print('flag states', flag_state_dict.items())
         #print('final states', final_states)
 
-        #write_fst('output/before_merge.hfst', result_fst)
+        #write_fst('output/before_merge.hfst', hfst.HfstTransducer(result_fst))
         #print('before merge', result_fst)
 
         # TODO: besuche nur die neuen Zustände und update das existierende
@@ -456,7 +479,7 @@ def combine_results(result_list, window_size, flag_encoder):
         flag_state_dict, final_states, predecessor_dict = get_flag_states(result_fst, 0, flag_encoder.flag_list)
 
         #print('after merge', result_fst)
-        #write_fst('output/after_merge.hfst', result_fst)
+        #write_fst('output/after_merge.hfst', hfst.HfstTransducer(result_fst))
 
         #print('after merge')
         #print('flag states', flag_state_dict.items())
@@ -499,26 +522,34 @@ def create_result_transducer(input_str, window_size, words_per_window, error_tra
 
     start = time.clock()
 
-    input_transducers = prepare_input(input_str, window_size, flag_encoder, as_transducer=True)
+    # as_transducer=True: always use create_input_transducer from sliding_window.py
+    # as_transducer=False: if composition!=None (main:openfst==True),
+    #                      then use create_input_transducer from composition_cpp.cpp
+    #                           (which does not work with REJECTION_WEIGHT < 0, though)
+    #                      else as above
+    input_transducers = prepare_input(input_str, window_size, flag_encoder, as_transducer=False)
     output_transducers = []
     for i, input_transducer in enumerate(input_transducers):
-        results = compose_and_search(input_transducer, error_transducer, lexicon_transducer, result_num, flag_encoder, composition=composition)
-        output_transducers.append(results)
+        result = compose_and_search(input_transducer, error_transducer, lexicon_transducer, result_num, flag_encoder, composition=composition)
+        output_transducers.append(result)
     
     after_composition = time.clock()
 
     #complete_output = combine_results(output_list, window_size)
     #complete_output = remove_redundant_paths(complete_output)
-    
-    complete_output = combine_results(output_transducers, window_size, flag_encoder)
-    complete_output = hfst.HfstTransducer(complete_output)
+
+    complete_outputs = []
+    for i in range(len(output_transducers[0])):
+        complete_output = combine_results(list(map(lambda x: x[i], output_transducers)), window_size, flag_encoder)
+        complete_output = hfst.HfstTransducer(complete_output)
+        complete_outputs.append(complete_output)
     
     after_combination = time.clock()
 
     logging.info('Composition Time: %f', after_composition - start)
     logging.info('Combination Time: %f', after_combination - after_composition)
 
-    return complete_output
+    return complete_outputs
 
 
 def get_edit_space_transducer(flag_encoder):
@@ -945,25 +976,29 @@ def window_size_1_2(input_str, error_transducer, lexicon_transducer, flag_encode
 
     # create results transducers for window sizes 1 and 2, disjunct and merge states
 
-    window_1 = create_result_transducer(\
+    windows_1 = create_result_transducer(
         input_str, 1, 3, error_transducer, lexicon_transducer, result_num, flag_encoder, composition)
-    window_2 = create_result_transducer(\
+    windows_2 = create_result_transducer(
         input_str, 2, 3, error_transducer, lexicon_transducer, result_num, flag_encoder, composition)
-    window_1.disjunct(window_2)
-    complete_output_basic = hfst.HfstBasicTransducer(window_1)
 
-    before_merge = time.clock()
+    complete_outputs = []
+    for i, (window_1, window_2) in enumerate(zip(windows_1, windows_2)):
+        window_1.disjunct(window_2)
+        complete_output_basic = hfst.HfstBasicTransducer(window_1)
+        
+        before_merge = time.clock()
+        
+        complete_merge(complete_output_basic, flag_encoder)
+        
+        after_merge = time.clock()
+        logging.info('Merge Time: %f', after_merge - before_merge)
+        
+        complete_output = hfst.HfstTransducer(complete_output_basic)
+        #complete_output.minimize()
 
-    complete_merge(complete_output_basic, flag_encoder)
-
-    after_merge = time.clock()
-    logging.info('Merge Time: %f', after_merge - before_merge)
-
-    complete_output = hfst.HfstTransducer(complete_output_basic)
-
-    #complete_output.minimize()
-
-    return complete_output
+        complete_outputs.append(complete_output)
+    
+    return complete_outputs
 
 
 def remove_flags(fst, flag_encoder):
@@ -1087,6 +1122,7 @@ def main():
 
     # set input_str to command-line argument if given
     input_str = args.inputline
+    global REJECTION_WEIGHT
     REJECTION_WEIGHT = args.rejection_weight
 
     #window_size = 2
@@ -1162,7 +1198,7 @@ def main():
                 logging.info('Preparation Time: %f', preparation_done - start)
                 
                 # apply correction using Composition Object
-                complete_output = window_size_1_2(input_str, None, None, flag_encoder, args.result_num, composition)
+                complete_output = window_size_1_2(input_str, None, None, flag_encoder, args.result_num, composition)[0]
 
     else:
 
@@ -1171,7 +1207,7 @@ def main():
 
         # apply correction directly in hfst
 
-        complete_output = window_size_1_2(input_str, error_transducer, lexicon_transducer, flag_encoder, args.result_num)
+        complete_output = window_size_1_2(input_str, error_transducer, lexicon_transducer, flag_encoder, args.result_num)[0]
 
     # write output to filesystem
 

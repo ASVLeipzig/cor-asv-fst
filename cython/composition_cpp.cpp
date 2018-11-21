@@ -76,14 +76,19 @@ Composition::Composition(const string &error_file, const string &lexicon_file, i
     /* same here: we want a WeightConvertMapper for a Converter that depends on 
        rejection_weight given in the constructor. 
      */
-    this->weight_mapper = new WeightConvertMapper<StdArc, StdArc, RejectionWeight>((RejectionWeight(W(this->rejection_weight))));
+    if (this->rejection_weight < 0)
+      // caller wants to do backoff_result herself
+      this->weight_mapper = NULL;
+    else
+      this->weight_mapper = new WeightConvertMapper<StdArc, StdArc, RejectionWeight>((RejectionWeight(W(this->rejection_weight))));
     
 }
 
 
 Composition::~Composition() {
   delete this->string_compiler;
-  delete this->weight_mapper;
+  if (this->weight_mapper)
+    delete this->weight_mapper;
 }
 
 
@@ -455,16 +460,29 @@ std::unique_ptr<StdComposeFst> Composition::lazy_compose(string input_str) {
   cerr << "Compose Time: " << (time_composed - time_created) << endl;
 #endif
 
+#if 0  
+  // remove epsilon-epsilon transitions:
+  RmEpsilon(delayed_result.get());
+    
+  // connect (make coaccessible) not necessary as included by RmEpsilon already:
+  // Connect(delayed_result.get());
+
+  if (this->weight_mapper) {
   /* FIXME does not work -- maybe we need a delayed backoff variant?
      so the caller must do backoff herself (union with reweighted input, rmepsilon, determinize)!
-  std::unique_ptr<SVF> output_transducer = backoff_result(input_transducer.get(), delayed_result.get());
-  input_transducer.reset();
-  delayed_result.reset();
-  
-  return std::move(output_transducer);
   */
+    std::unique_ptr<SVF> output_transducer = backoff_result(input_transducer.get(), delayed_result.get());
+    input_transducer.reset();
+    delayed_result.reset();
+  
+    return std::move(output_transducer);
+  } else
+#endif
+    {
+    input_transducer.reset();
 
-  return std::move(delayed_result);
+    return std::move(delayed_result);
+  }
 }
 
 
@@ -509,12 +527,21 @@ std::unique_ptr<SVF> Composition::eager_compose(SVF *input_transducer) {
   float time_composed = get_cpu_time();
   cerr << "Compose Time: " << (time_composed - time_created) << endl;
 #endif
-  
-  std::unique_ptr<SVF> output_transducer = backoff_result(input_transducer, result.get());
-  result.reset();
 
-  return std::move(output_transducer);
+  // remove epsilon-epsilon transitions:
+  RmEpsilon(result.get());
+    
+  // connect (make coaccessible) not necessary as included by RmEpsilon already:
+  // Connect(result.get());
 
+  if (this->weight_mapper) {
+    std::unique_ptr<SVF> output_transducer = backoff_result(input_transducer, result.get());
+    result.reset();
+    
+    return std::move(output_transducer);
+  } else {
+    return std::move(result);
+  }
 }
 
 
@@ -580,11 +607,22 @@ std::unique_ptr<SVF> Composition::eager_compose(string input_str) {
   cerr << "Compose Time: " << (time_composed - time_created) << endl;
 #endif
 
-  std::unique_ptr<SVF> output_transducer = backoff_result(input_transducer.get(), result.get());
-  input_transducer.reset();
-  result.reset();
+  // remove epsilon-epsilon transitions:
+  RmEpsilon(result.get());
+    
+  // connect (make coaccessible) not necessary as included by RmEpsilon already:
+  // Connect(result.get());
+
+  if (this->weight_mapper) {
+    std::unique_ptr<SVF> output_transducer = backoff_result(input_transducer.get(), result.get());
+    input_transducer.reset();
+    result.reset();
   
-  return std::move(output_transducer);
+    return std::move(output_transducer);
+  } else {
+    input_transducer.reset();
+    return std::move(result);
+  }
 }
 
 std::unique_ptr<SVF> Composition::backoff_result(SVF *input_transducer, SVF *output_transducer) {
@@ -607,11 +645,6 @@ std::unique_ptr<SVF> Composition::backoff_result(SVF *input_transducer, SVF *out
   cerr << "Backoff Time: " << (time_backoff - time_started) << endl;
 #endif
   
-  // remove epsilon-epsilon transitions:
-  RmEpsilon(output_transducer);
-    
-  // connect (make coaccessible) not necessary as included by RmEpsilon already: Connect(&delayed_result3);
-
   // disambiguate?
 
   // determinize and prune (in preparation of nbest search):
