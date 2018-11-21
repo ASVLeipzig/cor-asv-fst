@@ -85,6 +85,85 @@ def get_adjusted_distance(l1, l2):
 
     return d, len(l2) # d, len(a) - length_reduction # distance and adjusted length
 
+def get_precision_recall(ocr, cor, gt):
+    """fixme
+    """
+
+    scoring = SimpleScoring(2, -1)
+    aligner = StrictGlobalSequenceAligner(scoring, -2)
+
+    a = Sequence(ocr)
+    b = Sequence(cor)
+    c = Sequence(gt)
+
+    # create a vocabulary and encode the sequences
+    vocabulary = Vocabulary()
+    ocr_seq = vocabulary.encodeSequence(a)
+    cor_seq = vocabulary.encodeSequence(b)
+    gt_seq = vocabulary.encodeSequence(c)
+
+    _, alignments = aligner.align(ocr_seq, gt_seq, backtrace=True)
+    a = vocabulary.decodeSequenceAlignment(alignments[0]) # best result
+    _, alignments = aligner.align(cor_seq, gt_seq, backtrace=True)
+    b = vocabulary.decodeSequenceAlignment(alignments[0]) # best result
+
+    # positives: incorrect characters before post-correction
+    # negatives: correct characters before post-correction
+    # true: correct after post-correction
+    # false: incorrect after post-correction
+    # true positives: correctly corrected
+    # false positives: incorrectly corrected
+    # true negatives: correctly unchanged
+    # false negatives: incorrectly unchanged
+    # precision: ratio of correct changes
+    # recall: ratio of detected errors
+    i = 0
+    j = 0
+    FP = 0
+    TP = 0
+    FN = 0
+    TN = 0
+    while i < len(a) and j < len(b):
+        ocr_sym = a.first[i] or ''
+        while i < len(a) and not a.second[i]:
+            i += 1
+            ocr_sym += a.first[i] or ''
+        cor_sym = b.first[j] or ''
+        while j < len(b) and not b.second[j]:
+            j += 1
+            cor_sym += b.first[j] or ''
+        gt_sym = a.second[i]
+        # loop invariants: 
+        assert a.second[i] == b.second[j] # gt is synchronous with i/j
+        assert a.second[i] # jumping over gaps
+        assert b.second[j] # jumping over gaps
+        i += 1
+        j += 1
+        # fill from final gaps:
+        while i < len(a) and not a.second[i]:
+            ocr_sym += a.first[i]
+            i += 1
+        while j < len(b) and not b.second[j]:
+            cor_sym += b.first[j]
+            j += 1
+        #print('ocr_sym: "%s"' % ocr_sym)
+        #print('cor_sym: "%s"' % cor_sym)
+        #print('gt_sym:  "%s"' % gt_sym)
+        # counting:
+        if ocr_sym == gt_sym:
+            if cor_sym == gt_sym:
+                TN += 1
+            else:
+                FP += 1
+        else:
+            if cor_sym == gt_sym:
+                TP += 1
+            else:
+                FN += 1
+                # what if ocr_sym != cor_sym ?
+    assert i == len(a)
+    assert j == len(b)
+    return (TP, TN, FP, FN)
 
 def main():
     """
@@ -105,7 +184,8 @@ def main():
     parser.add_argument('directory', metavar='PATH', help='directory for GT, input, and output files')
     parser.add_argument('-I', '--input-suffix', metavar='SUF', type=str, default='txt', help='input (OCR) filenames suffix')
     parser.add_argument('-O', '--output-suffix', metavar='SUF', type=str, default='cor-asv-fst.txt', help='output (corrected) filenames suffix')
-    parser.add_argument('-M', '--metric', metavar='TYPE', type=str, choices=['Levenshtein', 'combining-e-umlauts'], default='combining-e-umlauts', help='distance metric to apply')
+    parser.add_argument('-M', '--metric', metavar='TYPE', type=str, choices=['Levenshtein', 'combining-e-umlauts', 'precision-recall'], default='combining-e-umlauts', help='distance metric to apply')
+    parser.add_argument('-S', '--silent', action='store_true', default=False, help='do not show data, only aggregate')
     args = parser.parse_args()
     
     #l1 = '########Mit unendlich ſuͤßem Sehnen########'
@@ -122,9 +202,15 @@ def main():
     ocr_dict = helper.create_dict(args.directory + "/", args.input_suffix)
     gt_dict = helper.create_dict(args.directory + "/", 'gt.txt')
     cor_dict = helper.create_dict(args.directory + "/", args.output_suffix)
-    
-    edits_ocr, edits_cor = 0, 0
-    len_ocr, len_cor = 0,0
+
+    if args.metric == 'precision-recall':
+        TP = 0
+        TN = 0
+        FP = 0
+        FN = 0
+    else:
+        edits_ocr, edits_cor = 0, 0
+        len_ocr, len_cor = 0,0
     
     for key in cor_dict.keys():
         
@@ -135,10 +221,11 @@ def main():
         gt_line = gt_dict[key].strip()
         ocr_line = ocr_dict[key].strip()
         cor_line = cor_dict[key].strip()
-        
-        print('OCR:       ', ocr_line)
-        print('Corrected: ', cor_line)
-        print('GT:        ', gt_line)
+
+        if not args.silent:
+            print('OCR:       ', ocr_line)
+            print('Corrected: ', cor_line)
+            print('GT:        ', gt_line)
         
         # get character error rate of OCR and corrected text
         # FIXME: convert to NFC (canonical composition normal form) before
@@ -150,21 +237,46 @@ def main():
         elif args.metric == 'combining-e-umlauts':
             edits_ocr_line, len_ocr_line = get_adjusted_distance(ocr_line, gt_line)
             edits_cor_line, len_cor_line = get_adjusted_distance(cor_line, gt_line)
+        elif args.metric == 'precision-recall':
+            TP_line, TN_line, FP_line, FN_line = get_precision_recall(ocr_line, cor_line, gt_line)
         else:
             raise Exception("evaluation metric '%s' not implemented" % args.metric)
-        
-        print('CER OCR:       ', edits_ocr_line / len_ocr_line)
-        print('CER Corrected: ', edits_cor_line / len_cor_line)
-        
-        edits_ocr += edits_ocr_line
-        edits_cor += edits_cor_line
-        len_ocr += len_ocr_line
-        len_cor += len_cor_line
-        
-    
-    print('Aggregate CER OCR:       ', edits_ocr / len_ocr)
-    print('Aggregate CER Corrected: ', edits_cor / len_cor)
 
+        if args.metric == 'precision-recall':
+            if not args.silent:
+                print('precision: %.3f / recall %.3f' %
+                      (1 if TP_line+FP_line==0 else TP_line/(TP_line+FP_line),
+                       1 if TP_line+FN_line==0 else TP_line/(TP_line+FN_line)))
+            
+            TP += TP_line
+            TN += TN_line
+            FP += FP_line
+            FN += FN_line
+        else:
+            if not args.silent:
+                print('CER OCR:       ', edits_ocr_line / len_ocr_line)
+                print('CER Corrected: ', edits_cor_line / len_cor_line)
+            
+            edits_ocr += edits_ocr_line
+            edits_cor += edits_cor_line
+            len_ocr += len_ocr_line
+            len_cor += len_cor_line
+    
+    if args.metric == 'precision-recall':
+        precision = 1 if TP+FP==0 else TP/(TP+FP)
+        recall = 1 if TP+FN==0 else TP/(TP+FN)
+        f1 = 2*TP/(2*TP+FP+FN)
+        tpr = recall # "sensitivity"
+        fpr = 0 if FP+TN==0 else FP/(FP+TN) # "overcorrection rate"
+        auc = 0.5*tpr*fpr+tpr*(1-fpr)+0.5*(1-tpr)*(1-fpr)
+        print('Aggregate precision: %.3f / recall: %.3f / F1: %.3f' %
+              (precision, recall, f1))
+        print('Aggregate true-positive-rate: %.3f / false-positive-rate: %.3f / AUC: %.3f' %
+              (tpr, fpr, auc))
+               
+    else:
+        print('Aggregate CER OCR:       ', edits_ocr / len_ocr)
+        print('Aggregate CER Corrected: ', edits_cor / len_cor)
 
 if __name__ == '__main__':
     main()
