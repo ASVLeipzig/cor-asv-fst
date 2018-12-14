@@ -26,6 +26,9 @@ def create_lexicon(lines, nlp):
     umlautset = set("äöüÄÖÜ")
     umlauttrans = str.maketrans({'ä': 'aͤ', 'ö': 'oͤ', 'ü': 'uͤ', 'Ä': 'Aͤ', 'Ö': 'Oͤ', 'Ü': 'Uͤ'})
     num_re = re.compile('[0-9]{1,3}([,.]?[0-9]{3})*([.,][0-9]*)?')
+    # '−' as sign prefix
+    # '√' as prefix?
+    # ¹²³⁴⁵⁶⁷⁸⁹⁰ digits (maybe goes away with NFC?)
     
     if type(lines) is dict:
         lines = lines.values()
@@ -129,8 +132,8 @@ def main():
     ##foo4_dict = create_dict(path, 'foo4')
 
     # get dicts containing a lexicon of words, punctuation, opening/closing brackets
-    if args.gpu:
-        spacy.prefer_gpu()
+    if args.use_gpu:
+        spacy.require_gpu()
         spacy.util.use_gpu(0)
     nlp = spacy.load('de', disable=['parser', 'ner']) # everything we don't have at runtime either
     infix_re = spacy.util.compile_infix_regex(nlp.Defaults.infixes +
@@ -138,6 +141,17 @@ def main():
                                                '/']) # maybe more restrictive?
     suffix_re = spacy.util.compile_suffix_regex(nlp.Defaults.suffixes +
                                                 ('/',)) # maybe more restrictive?
+    # '〟' as historic quotation mark (left and right)
+    # '〃' as historic quotation mark (at the start of the line!)
+    # '‟' as historic quotation mark (at the start of the line!)
+    # '›' and '‹' as historic quotation marks (maybe goes away with NFC?)
+    # '⟨' and '⟩' parentheses (maybe goes away with NFC?)
+    # '⁽' and '⁾' parentheses (maybe goes away with NFC?)
+    # '〈' and '〉' brackets (maybe goes away with NFC?)
+    # '‹' and '›' as historic quotation mark
+    # '’' as historic apostrophe
+    # '—' as dash, even when written like a prefix
+    # \u+feff (byte order mark) as prefix
     nlp.tokenizer = spacy.tokenizer.Tokenizer(nlp.vocab,
                                               token_match=nlp.tokenizer.token_match,
                                               prefix_search=nlp.tokenizer.prefix_search,
