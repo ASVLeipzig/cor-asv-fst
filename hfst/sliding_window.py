@@ -49,6 +49,9 @@ def prepare_input(input_str, window_size, flag_encoder, as_transducer=False):
     # a single punctuation character
     # TODO: ensure tokenization is consistent with create_lexicon (spacy + our rules)
 
+    # TODO: if input is already an acceptor (i.e. hypotheses graph), we must still
+    #       be able to do sliding window
+    
     new_windows = []
     last_word = ''
     for word in windows:
@@ -77,7 +80,14 @@ def prepare_input(input_str, window_size, flag_encoder, as_transducer=False):
             # unicodedata's NFC (canonical normal form) cannot
             # normalize.
             # so instead, we must fit those explicitly:
-            window.extend(reduce(lambda l, c: l + ([l.pop()+c] if unicodedata.combining(c) else [c]), word, []))
+            for k, c in enumerate(word):
+                if unicodedata.combining(c):
+                    if k > 0:
+                        window[-1] = window[-1]+c
+                    else:
+                        pass # or issue warning that a combining character was placed after a space?
+                else:
+                    window.append(c)
             window.append(' ')
             window.append(flag_encoder.encode(i+j+1))
         if as_transducer:
