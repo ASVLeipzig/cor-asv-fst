@@ -1,44 +1,82 @@
 import argparse
 
-from alignment.sequence import Sequence
-import alignment
-alignment.sequence.GAP_ELEMENT = 0 #"ε"
-from alignment.vocabulary import Vocabulary
-from alignment.sequencealigner import SimpleScoring, StrictGlobalSequenceAligner
+# from alignment.sequence import Sequence
+# import alignment
+# alignment.sequence.GAP_ELEMENT = 0 #"ε"
+# from alignment.vocabulary import Vocabulary
+# from alignment.sequencealigner import SimpleScoring, StrictGlobalSequenceAligner
 
-import editdistance # faster (and no memory/stack problems), but no customized distance metrics
+from difflib import SequenceMatcher # faster (and no memory/stack problems), but no customized distance metrics
+matcher = SequenceMatcher(isjunk=None, autojunk=False)
+GAP_ELEMENT = 0
+
+import editdistance # fastest (and no memory/stack problems), but no customized distance metrics and no alignment result
 
 import helper
 
+def get_best_alignment(l1, l2):
+    # scoring = SimpleScoring(2, -1)
+    # aligner = StrictGlobalSequenceAligner(scoring, -2)
+
+    # a = Sequence(l1)
+    # b = Sequence(l2)
+
+    # # create a vocabulary and encode the sequences
+    # vocabulary = Vocabulary()
+    # source_seq = vocabulary.encodeSequence(a)
+    # target_seq = vocabulary.encodeSequence(b)
+
+    # score = aligner.align(source_seq, target_seq)
+    # if score < 5-len(source_seq)/2:
+    #     return editdistance.eval(l1, l2), len(l2) # prevent stack/heap overflow with aligner
+    
+    # _, alignments = aligner.align(source_seq, target_seq, backtrace=True)
+    # a = vocabulary.decodeSequenceAlignment(alignments[0]) # best result
+
+    # #print(a)
+    global matcher
+    matcher.set_seqs(l1, l2)
+
+    alignment1 = []
+    for op, l1_begin, l1_end, l2_begin, l2_end in matcher.get_opcodes():
+        if op == 'equal':
+            alignment1.extend(zip(l1[l1_begin:l1_end],
+                                  l2[l2_begin:l2_end]))
+        elif op == 'replace': # not really substitution:
+            delta = l1_end-l1_begin-l2_end+l2_begin
+            #alignment1.extend(zip(l1[l1_begin:l1_end] + [GAP_ELEMENT]*(-delta),
+            #                      l2[l2_begin:l2_end] + [GAP_ELEMENT]*(delta)))
+            if delta > 0: # replace+delete
+                alignment1.extend(zip(l1[l1_begin:l1_end-delta],
+                                      l2[l2_begin:l2_end]))
+                alignment1.extend(zip(l1[l1_end-delta:l1_end],
+                                      [GAP_ELEMENT]*(delta)))
+            if delta <= 0: # replace+insert
+                alignment1.extend(zip(l1[l1_begin:l1_end],
+                                      l2[l2_begin:l2_end+delta]))
+                alignment1.extend(zip([GAP_ELEMENT]*(-delta),
+                                      l2[l2_end+delta:l2_end]))
+        elif op == 'insert':
+            alignment1.extend(zip([GAP_ELEMENT]*(l2_end-l2_begin),
+                                  l2[l2_begin:l2_end]))
+        elif op == 'delete':
+            alignment1.extend(zip(l1[l1_begin:l1_end],
+                                  [GAP_ELEMENT]*(l1_end-l1_begin)))
+        else:
+            raise Exception("difflib returned invalid opcode", op, "in", l1, l2)
+    return alignment1
 
 def get_adjusted_distance(l1, l2):
     """Calculate distance (as the number of edits) of strings l1 and l2 by aligning them.
     The adjusted length and distance here means that diacritical characters are counted
     as only one character. Thus, for each occurrence of such a character the
     length is reduced by 1."""
-
-    scoring = SimpleScoring(2, -1)
-    aligner = StrictGlobalSequenceAligner(scoring, -2)
-
-    a = Sequence(l1)
-    b = Sequence(l2)
-
-    # create a vocabulary and encode the sequences
-    vocabulary = Vocabulary()
-    source_seq = vocabulary.encodeSequence(a)
-    target_seq = vocabulary.encodeSequence(b)
-
-    _, alignments = aligner.align(source_seq, target_seq, backtrace=True)
-    a = vocabulary.decodeSequenceAlignment(alignments[0]) # best result
-
-    #print(a)
-
-
+    alignment1 = get_best_alignment(l1, l2)
+    
     # the following code ensures that diacritical characters are counted as
     # a single character (and not as 2)
 
     d = 0 # distance
-    length_reduction = max(l1.count(u"\u0364"), l2.count(u"\u0364"))
 
     umlauts = {u"ä": "a", u"ö": "o", u"ü": "u"} # for example
     #umlauts = {}
@@ -46,7 +84,8 @@ def get_adjusted_distance(l1, l2):
     source_umlaut = ''
     target_umlaut = ''
 
-    for source_sym, target_sym in zip(a.first, a.second):
+    #for source_sym, target_sym in zip(a.first, a.second):
+    for source_sym, target_sym in alignment1:
 
         #print(source_sym, target_sym)
 
@@ -60,7 +99,7 @@ def get_adjusted_distance(l1, l2):
         else:
             if source_umlaut: # previous source is umlaut non-error
                 source_umlaut = False # reset
-                if (source_sym == alignment.sequence.GAP_ELEMENT and
+                if (source_sym == GAP_ELEMENT and
                     target_sym == u"\u0364"): # diacritical combining e
                     d += 1.0 # umlaut error (umlaut match)
                     #print('source umlaut match', a)
@@ -68,7 +107,7 @@ def get_adjusted_distance(l1, l2):
                     d += 2.0 # two full errors (mismatch)
             elif target_umlaut: # previous target is umlaut non-error
                 target_umlaut = False # reset
-                if (target_sym == alignment.sequence.GAP_ELEMENT and
+                if (target_sym == GAP_ELEMENT and
                     source_sym == u"\u0364"): # diacritical combining e
                     d += 1.0 # umlaut error (umlaut match)
                     #print('target umlaut match', a)
@@ -83,30 +122,45 @@ def get_adjusted_distance(l1, l2):
     if source_umlaut or target_umlaut: # previous umlaut error
         d += 1.0 # one full error
 
+    #length_reduction = max(l1.count(u"\u0364"), l2.count(u"\u0364"))
     return d, len(l2) # d, len(a) - length_reduction # distance and adjusted length
 
 def get_precision_recall(ocr, cor, gt):
-    """fixme
+    """Calculate number of true/false positive/negative edits of given OCR vs GT and COR vs GT line by aligning them.
+    
+    Align both OCR and COR with GT line, 
+    then zip through alignment (which constitutes characters and gaps)
+    to count everything as true/false that is correct/incorrect w.r.t. GT in COR,
+    and everything as positive/negative that is incorrect/correct w.r.t. GT in OCR,
+    so precision and recall (or similar) metrics can be accumulated
+    for post-correction (as a classifier).
+    (If both OCR and COR are incorrect, this will be a false negative,
+     regardless of whether COR did alter OCR or not.)
+    
+    Return the true positive, true negative, false positive, false negative counts as a tuple.
     """
 
-    scoring = SimpleScoring(2, -1)
-    aligner = StrictGlobalSequenceAligner(scoring, -2)
+    # scoring = SimpleScoring(2, -1)
+    # aligner = StrictGlobalSequenceAligner(scoring, -2)
 
-    a = Sequence(ocr)
-    b = Sequence(cor)
-    c = Sequence(gt)
+    # a = Sequence(ocr)
+    # b = Sequence(cor)
+    # c = Sequence(gt)
 
-    # create a vocabulary and encode the sequences
-    vocabulary = Vocabulary()
-    ocr_seq = vocabulary.encodeSequence(a)
-    cor_seq = vocabulary.encodeSequence(b)
-    gt_seq = vocabulary.encodeSequence(c)
+    # # create a vocabulary and encode the sequences
+    # vocabulary = Vocabulary()
+    # ocr_seq = vocabulary.encodeSequence(a)
+    # cor_seq = vocabulary.encodeSequence(b)
+    # gt_seq = vocabulary.encodeSequence(c)
 
-    _, alignments = aligner.align(ocr_seq, gt_seq, backtrace=True)
-    a = vocabulary.decodeSequenceAlignment(alignments[0]) # best result
-    _, alignments = aligner.align(cor_seq, gt_seq, backtrace=True)
-    b = vocabulary.decodeSequenceAlignment(alignments[0]) # best result
-
+    # _, alignments = aligner.align(ocr_seq, gt_seq, backtrace=True)
+    # a = vocabulary.decodeSequenceAlignment(alignments[0]) # best result
+    # _, alignments = aligner.align(cor_seq, gt_seq, backtrace=True)
+    # b = vocabulary.decodeSequenceAlignment(alignments[0]) # best result
+    
+    alignment_ocr = get_best_alignment(ocr, gt)
+    alignment_cor = get_best_alignment(cor, gt)
+    
     # positives: incorrect characters before post-correction
     # negatives: correct characters before post-correction
     # true: correct after post-correction
@@ -123,28 +177,28 @@ def get_precision_recall(ocr, cor, gt):
     TP = 0
     FN = 0
     TN = 0
-    while i < len(a) and j < len(b):
-        ocr_sym = a.first[i] or ''
-        while i < len(a) and not a.second[i]:
+    while i < len(alignment_ocr) and j < len(alignment_cor):
+        ocr_sym = alignment_ocr[i][0] or ''
+        while i < len(alignment_ocr) and not alignment_ocr[i][1]:
             i += 1
-            ocr_sym += a.first[i] or ''
-        cor_sym = b.first[j] or ''
-        while j < len(b) and not b.second[j]:
+            ocr_sym += alignment_ocr[i][0] or ''
+        cor_sym = alignment_cor[j][0] or ''
+        while j < len(alignment_cor) and not alignment_cor[j][1]:
             j += 1
-            cor_sym += b.first[j] or ''
-        gt_sym = a.second[i]
+            cor_sym += alignment_cor[j][0] or ''
+        gt_sym = alignment_ocr[i][1]
         # loop invariants: 
-        assert a.second[i] == b.second[j] # gt is synchronous with i/j
-        assert a.second[i] # jumping over gaps
-        assert b.second[j] # jumping over gaps
+        assert alignment_ocr[i][1] == alignment_cor[j][1] # gt is synchronous with i/j
+        assert alignment_ocr[i][1] # jumping over gaps
+        assert alignment_cor[j][1] # jumping over gaps
         i += 1
         j += 1
         # fill from final gaps:
-        while i < len(a) and not a.second[i]:
-            ocr_sym += a.first[i]
+        while i < len(alignment_ocr) and not alignment_ocr[i][1]:
+            ocr_sym += alignment_ocr[i][0]
             i += 1
-        while j < len(b) and not b.second[j]:
-            cor_sym += b.first[j]
+        while j < len(alignment_cor) and not alignment_cor[j][1]:
+            cor_sym += alignment_cor[j][0]
             j += 1
         #print('ocr_sym: "%s"' % ocr_sym)
         #print('cor_sym: "%s"' % cor_sym)
@@ -161,8 +215,8 @@ def get_precision_recall(ocr, cor, gt):
             else:
                 FN += 1
                 # what if ocr_sym != cor_sym ?
-    assert i == len(a)
-    assert j == len(b)
+    assert i == len(alignment_ocr)
+    assert j == len(alignment_cor)
     return (TP, TN, FP, FN)
 
 def main():
