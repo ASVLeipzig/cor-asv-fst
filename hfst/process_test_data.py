@@ -57,18 +57,34 @@ def main():
         ## bracketing rules
         error_transducer, lexicon_transducer = sw.load_transducers_bracket(
             'fst/max_error_3_context_23_dta.hfst', # old error model for Fraktur4
-            #'fst/max_error_3_context_23_dta19-reduced.' + args.input_suffix[:-3] + 'hfst', # new error model for chosen output_suffix
-            #'fst/max_error_3_context_23_dta19-reduced.Fraktur4.hfst', # new error model for Fraktur4 (when deviating from chosen output_suffix)
-            #'fst/max_error_3_context_23_dta19-reduced.foo4.hfst', # new error model for foo4 (when deviating from chosen output_suffix)
-            #'fst/max_error_3_context_23_dta19-reduced.deu-frak3.hfst', # new error model for deu-frak3 (when deviating from chosen output_suffix)
-            'fst/punctuation_transducer_dta19-testdata.hfst',
-            #'fst/punctuation_transducer_dta19-traindata.hfst',
-            'fst/lexicon_transducer_dta19-testdata.hfst',
-            #'fst/lexicon_transducer_dta19-traindata.hfst',
-            'fst/open_bracket_transducer_dta19-testdata.hfst',
-            #'fst/open_bracket_transducer_dta19-traindata.hfst',
-            'fst/close_bracket_transducer_dta19-testdata.hfst',
-            #'fst/close_bracket_transducer_dta19-traindata.hfst',
+            #'fst/max_error_3_context_23_dta19-reduced.' + args.input_suffix[:-3] + 'hfst', # new small error model for chosen input_suffix
+            #'fst/max_error_3_context_23_dta19-reduced.Fraktur4.hfst', # new small error model for Fraktur4 (when deviating from chosen input_suffix)
+            #'fst/max_error_3_context_23_dta19-reduced.foo4.hfst', # new small error model for foo4 (when deviating from chosen input_suffix)
+            #'fst/max_error_3_context_23_dta19-reduced.deu-frak3.hfst', # new small error model for deu-frak3 (when deviating from chosen input_suffix)
+            #'fst/max_error_3_context_23_dta19-reduced.mixed.hfst', # new small mixed error model
+            #'fst/max_error_3_context_23_dta19.' + args.input_suffix[:-3] + 'hfst', # new large error model for chosen input_suffix
+            #'fst/max_error_3_context_23_dta19.' + args.input_suffix[:-10] + '.hfst', # new large error model for chosen input_suffix (when combining with corRNN)
+            #'fst/max_error_3_context_23_dta19.mixed.hfst', # new large mixed error model
+            'fst/punctuation_transducer_dta19-reduced.testdata.hfst', # small test corpus punctuation
+            #'fst/punctuation_transducer_dta19-reduced.traindata.hfst', # small train corpus punctuation
+            #'fst/punctuation_transducer_dta19.testdata.hfst', # large test corpus punctuation
+            #'fst/punctuation_transducer_dta19.traindata.hfst', # large train corpus punctuation
+            #'fst/lexicon_komplett.again/punctuation_transducer_dta.hfst', # complete corpus punctuation
+            'fst/lexicon_transducer_dta19-reduced.testdata.hfst', # small test corpus lexicon
+            #'fst/lexicon_transducer_dta19-reduced.traindata.hfst', # small train corpus lexicon
+            #'fst/lexicon_transducer_dta19.testdata.hfst', # large test corpus lexicon
+            #'fst/lexicon_traindata.large/lexicon_transducer_dta.hfst', # large train corpus lexicon
+            #'fst/lexicon_komplett.again/lexicon_transducer_dta.hfst', # complete corpus lexicon
+            'fst/open_bracket_transducer_dta19-reduced.testdata.hfst', # small test corpus opening brackets
+            #'fst/open_bracket_transducer_dta19-reduced.traindata.hfst', # small train corpus opening brackets
+            #'fst/open_bracket_transducer_dta19.testdata.hfst', # large test corpus opening brackets
+            #'fst/open_bracket_transducer_dta19-traindata.hfst', # large train corpus opening brackets
+            #'fst/lexicon_komplett.again/open_bracket_transducer_dta.hfst', # complete corpus opening brackets
+            'fst/close_bracket_transducer_dta19-reduced.testdata.hfst', # small test corpus closing brackets
+            #'fst/close_bracket_transducer_dta19-reduced.traindata.hfst', # small train corpus closing brackets
+            #'fst/close_bracket_transducer_dta19.testdata.hfst', # large test corpus closing brackets
+            #'fst/close_bracket_transducer_dta19.traindata.hfst', # large train corpus closing brackets
+            #'fst/lexicon_komplett.again/close_bracket_transducer_dta.hfst', # complete corpus closing brackets
             flag_encoder,
             composition_depth=args.composition_depth,
             words_per_window=args.words_per_window)
@@ -77,16 +93,21 @@ def main():
         ## inter-word language model
         error_transducer, lexicon_transducer = sw.load_transducers_inter_word(
             'fst/max_error_3_context_23_dta.hfst', # old error model for Fraktur4
-            #'fst/max_error_3_context_23_dta19-reduced.' + args.input_suffix[:-3] + 'hfst', # new error model for chosen output_suffix
-            #'fst/max_error_3_context_23_dta19-reduced.Fraktur4.hfst', # new error model for Fraktur4 (when deviating from chosen output_suffix)
-            #'fst/max_error_3_context_23_dta19-reduced.foo4.hfst', # new error model for foo4 (when deviating from chosen output_suffix)
-            #'fst/max_error_3_context_23_dta19-reduced.deu-frak3.hfst', # new error model for deu-frak3 (when deviating from chosen output_suffix)
-            #'fst/max_error_3_context_23_dta19-reduced.ocrofraktur.hfst', # new error model for Fraktur4 (when deviating from chosen output_suffix)
-            #'fst/max_error_3_context_23_dta19-reduced.ocrofraktur-jze.hfst', # new error model for Fraktur4 (when deviating from chosen output_suffix)
-            'fst/lexicon_transducer_dta19-testdata.hfst',
-            #'fst/lexicon_transducer_dta19-traindata.hfst',
-            'fst/left_punctuation.hfst',
-            'fst/right_punctuation.hfst',
+            #'fst/max_error_3_context_23_dta19-reduced.' + args.input_suffix[:-3] + 'hfst', # new small error model for chosen input_suffix
+            #'fst/max_error_3_context_23_dta19-reduced.Fraktur4.hfst', # new small error model for Fraktur4 (when deviating from chosen input_suffix)
+            #'fst/max_error_3_context_23_dta19-reduced.foo4.hfst', # new small error model for foo4 (when deviating from chosen input_suffix)
+            #'fst/max_error_3_context_23_dta19-reduced.deu-frak3.hfst', # new small error model for deu-frak3 (when deviating from chosen input_suffix)
+            #'fst/max_error_3_context_23_dta19-reduced.mixed.hfst', # new small mixed error model
+            #'fst/max_error_3_context_23_dta19.' + args.input_suffix[:-3] + 'hfst', # new large error model for chosen input_suffix
+            #'fst/max_error_3_context_23_dta19.' + args.input_suffix[:-10] + '.hfst', # new large error model for chosen input_suffix (when combining with corRNN)
+            #'fst/max_error_3_context_23_dta19.mixed.hfst', # new large mixed error model
+            'fst/lexicon_transducer_dta19-reduced.testdata.hfst', # small test corpus lexicon
+            #'fst/lexicon_transducer_dta19-reduced.traindata.hfst', # small train corpus lexicon
+            #'fst/lexicon_transducer_dta19.testdata.hfst', # large test corpus lexicon
+            #'fst/lexicon_traindata.large/lexicon_transducer_dta.hfst', # large train corpus lexicon
+            #'fst/lexicon_komplett.again/lexicon_transducer_dta.hfst', # complete corpus lexicon
+            'fst/left_punctuation.hfst', # old left-of-space/suffix punctuation
+            'fst/right_punctuation.hfst', # old right-of-space/prefix punctuation
             flag_encoder,
             words_per_window=args.words_per_window,
             composition_depth=args.composition_depth)
@@ -95,13 +116,20 @@ def main():
         ## no punctuation changes
         error_transducer, lexicon_transducer = sw.load_transducers_preserve_punctuation(
             'fst/preserve_punctuation_max_error_3_context_23_dta.hfst', # old error model for Fraktur4
-            #'fst/max_error_3_context_23_preserve_punctuation_dta19-reduced.' + args.input_suffix[:-3] + 'hfst', # new error model for chosen output_suffix
-            #'fst/max_error_3_context_23_preserve_punctuation_dta19-reduced.Fraktur4.hfst', # new error model for Fraktur4 (when deviating from chosen output_suffix)
-            #'fst/max_error_3_context_23_preserve_punctuation_dta19-reduced.foo4.hfst', # new error model for foo4 (when deviating from chosen output_suffix)
-            #'fst/max_error_3_context_23_preserve_punctuation_dta19-reduced.deu-frak3.hfst', # new error model for deu-frak3 (when deviating from chosen output_suffix)
-            'fst/any_punctuation_no_space.hfst',
-            'fst/lexicon_transducer_dta19-testdata.hfst',
-            #'fst/lexicon_transducer_dta19-traindata.hfst',
+            #'fst/max_error_3_context_23_preserve_punctuation_dta19-reduced.' + args.input_suffix[:-3] + 'hfst', # new small error model for chosen input_suffix
+            #'fst/max_error_3_context_23_preserve_punctuation_dta19-reduced.Fraktur4.hfst', # new small error model for Fraktur4 (when deviating from chosen input_suffix)
+            #'fst/max_error_3_context_23_preserve_punctuation_dta19-reduced.foo4.hfst', # new small error model for foo4 (when deviating from chosen input_suffix)
+            #'fst/max_error_3_context_23_preserve_punctuation_dta19-reduced.deu-frak3.hfst', # new small error model for deu-frak3 (when deviating from chosen input_suffix)
+            #'fst/max_error_3_context_23_preserve_punctuation_dta19-reduced.mixed.hfst', # new small mixed error model
+            #'fst/max_error_3_context_23_preserve_punctuation_dta19.' + args.input_suffix[:-3] + 'hfst', # new large error model for chosen input_suffix
+            #'fst/max_error_3_context_23_preserve_punctuation_dta19.' + args.input_suffix[:-10] + '.hfst', # new large error model for chosen input_suffix (when combining with corRNN)
+            #'fst/max_error_3_context_23_preserve_punctuation_dta19.mixed.hfst', # new large mixed error model
+            'fst/any_punctuation_no_space.hfst', # old preserving punctuation
+            'fst/lexicon_transducer_dta19-reduced.testdata.hfst', # small test corpus lexicon
+            #'fst/lexicon_transducer_dta19-reduced.traindata.hfst', # small train corpus lexicon
+            #'fst/lexicon_transducer_dta19.testdata.hfst', # large test corpus lexicon
+            #'fst/lexicon_traindata.large/lexicon_transducer_dta.hfst', # large train corpus lexicon
+            #'fst/lexicon_komplett.again/lexicon_transducer_dta.hfst', # complete corpus lexicon
             flag_encoder,
             composition_depth=args.composition_depth,
             words_per_window=args.words_per_window)
