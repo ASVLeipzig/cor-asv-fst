@@ -164,18 +164,22 @@ def main():
                 logging.error(exception)
             
             results = []
-            with mp.Pool(processes=args.processes) as pool:
-                params = list(ocr_dict.items()) #[10:20]
-                result = pool.starmap_async(process, params, error_callback=show_error)
-                result.wait()
-                if result.successful():
-                    results = result.get()
-                else:
-                    logging.error('error during processing')
-                    exit(1)
+            if args.processes > 1:
+                with mp.Pool(processes=args.processes) as pool:
+                    params = list(ocr_dict.items()) #[10:20]
+                    result = pool.starmap_async(process, params, error_callback=show_error)
+                    result.wait()
+                    if result.successful():
+                        results = result.get()
+                    else:
+                        logging.error('error during processing')
+                        exit(1)
+            else:
+                results = [process(basename, input_str) \
+                           for basename, input_str in ocr_dict.items()]
             
             for i, (basename, input_str, output_str) in enumerate(results):
-                print("%03d/%03d: %s" % (i+1, len(params), basename))
+                print("%03d/%03d: %s" % (i+1, len(ocr_dict), basename))
                 print(input_str)
                 print(output_str)
                 print(gt_dict[basename])
