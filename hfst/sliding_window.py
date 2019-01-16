@@ -306,66 +306,76 @@ def get_flag_states(transducer, starting_state, flag_list):
 
 
 def merge_states(basic_transducer, state_list, predecessor_dict):
-    """
+    '''
     Merge all states in the given state_list to a single state, 
     the first in the list. All incoming and outgoing transitions
     of the other states are redirected over this state.
     Forbid epsilon self-loops.
-    """
+    '''
 
-    #print('merging following states:', state_list)
+    def _incoming_transitions(state):
+        '''Return a list of pairs `(predecessor, transition)` of incoming
+           transitions for `state`.'''
+        result = []
+        for pred in predecessor_dict[state]:
+            for t in basic_transducer.transitions(pred):
+                if t.get_target_state() == state:
+                    result.append((pred, t))
+        return result
+
+    def _try_adding_transition(state, transition):
+        if transition.get_target_state() == state \
+                and transition.get_input_symbol() != hfst.EPSILON \
+                and transition.get_output_symbol() != hfst.EPSILON:
+            logging.warn('merge would add loop at %d (%s:%s::%f)',
+                         state, transition.get_input_symbol(),
+                         transition.get_output_symbol(),
+                         transition.get_weight())
+        else:
+            logging.debug('adding transition {} -> {}'\
+                          .format(state, str(transition)))
+            basic_transducer.add_transition(state, transition)
+
+    def _remove_transition(state, transition):
+        logging.debug('removing transition {} -> {}'\
+                      .format(state, str(transition)))
+        basic_transducer.remove_transition(state, transition)
 
     single_state = state_list[0]
-
-    #print('single state', single_state)
-
-    target_states = []
     for state in state_list[1:]:
-
-        #print('from state', state)
         if state == single_state:
-            raise Exception('cannot merge state %d with itself' % state, basic_transducer)
+            raise Exception('cannot merge state %d with itself' % state,
+                            basic_transducer)
+        # TODO: also remove dangling states (i.e. those from which the new
+        # final states cannot be reached anymore)
 
-        # TODO: also remove dangling states (i.e. those from which the new final states cannot be reached anymore)
+        transitions_to_remove, transitions_to_add = [], []
 
         # incoming transitions
-        predecessors = predecessor_dict[state]
-        for pred in predecessors:
-            #print('pred', pred)
-            for transition in basic_transducer.transitions(pred):
-                if transition.get_target_state() == state:
-                    #print(transition.get_target_state(), state)
-                    input_symbol = transition.get_input_symbol()
-                    output_symbol = transition.get_output_symbol()
-                    if pred != single_state:
-                        basic_transducer.add_transition(pred, single_state,
-                                                        input_symbol, output_symbol,
-                                                        transition.get_weight())
-                        if pred not in predecessor_dict[single_state]:
-                            predecessor_dict[single_state] += [pred]
-                    elif input_symbol != hfst.EPSILON and output_symbol != hfst.EPSILON:
-                        logging.warn('merge would add loop at %d (%s:%s::%f)', pred,
-                                    input_symbol, output_symbol, transition.get_weight())
-                    basic_transducer.remove_transition(pred, transition)
-        predecessor_dict[state] = []
-        
+        for (p, t) in _incoming_transitions(state):
+            transitions_to_remove.append((p, t))
+            transitions_to_add.append((
+                p,
+                hfst.HfstBasicTransition(
+                    single_state, t.get_input_symbol(),
+                    t.get_output_symbol(), t.get_weight())))
+
         # outgoing transitions
-        for transition in basic_transducer.transitions(state):
-            succ = transition.get_target_state()
-            input_symbol = transition.get_input_symbol()
-            output_symbol = transition.get_output_symbol()
-            if succ != single_state:
-                basic_transducer.add_transition(single_state, succ,
-                                                input_symbol, output_symbol,
-                                                transition.get_weight())
-                if single_state not in predecessor_dict[succ]:
-                    predecessor_dict[succ] += [single_state]
-                basic_transducer.remove_transition(state, transition)
-                predecessor_dict[succ] = [x for x in predecessor_dict[succ] if not state]
-            elif input_symbol != hfst.EPSILON and output_symbol != hfst.EPSILON:
-                logging.warn('merge would add loop at %d (%s:%s::%f)', succ,
-                            input_symbol, output_symbol, transition.get_weight())
-    
+        for t in basic_transducer.transitions(state):
+            transitions_to_remove.append((state, t))
+            transitions_to_add.append((
+                single_state,
+                hfst.HfstBasicTransition(
+                    t.get_target_state(), t.get_input_symbol(),
+                    t.get_output_symbol(), t.get_weight())))
+
+        for (s, t) in transitions_to_remove:
+            _remove_transition(s, t)
+        for (s, t) in transitions_to_add:
+            _try_adding_transition(s, t)
+        predecessor_dict[state] = []
+
+    # FIXME this is an unexpected side-effect
     # update flag_state_dict:
     for state in state_list[1:]:
         state_list.remove(state)
