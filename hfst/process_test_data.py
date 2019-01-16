@@ -17,6 +17,49 @@ flag_encoder = None
 composition = None
 args = None
 
+def parse_arguments():
+    parser = argparse.ArgumentParser(
+        description='OCR post-correction ocrd-cor-asv-fst batch-processor '
+                    'tool')
+    parser.add_argument(
+        'directory', metavar='PATH',
+        help='directory for input and output files')
+    parser.add_argument(
+        '-I', '--input-suffix', metavar='SUF', type=str, default='txt',
+        help='input (OCR) filenames suffix')
+    parser.add_argument(
+        '-O', '--output-suffix', metavar='SUF', type=str,
+        default='cor-asv-fst.txt', help='output (corrected) filenames suffix')
+    parser.add_argument(
+        '-P', '--punctuation', metavar='MODEL', type=str,
+        choices=['bracket', 'lm', 'preserve'], default='bracket',
+        help='how to model punctuation between words (bracketing rules, '
+             'inter-word language model, or keep unchanged)')
+    parser.add_argument(
+        '-W', '--words-per-window', metavar='NUM', type=int, default=3,
+        help='maximum number of words in one window')
+    parser.add_argument(
+        '-R', '--result-num', metavar='NUM', type=int, default=10,
+        help='result paths per window')
+    parser.add_argument(
+        '-D', '--composition-depth', metavar='NUM', type=int, default=2,
+        help='number of lexicon words that can be concatenated')
+    parser.add_argument(
+        '-J', '--rejection-weight', metavar='WEIGHT', type=float, default=1.5,
+        help='transition weight for unchanged input window')
+    parser.add_argument(
+        '-A', '--apply-lm', action='store_true', default=False,
+        help='also compose with n-gram language model for rescoring')
+    parser.add_argument(
+        '-Q', '--processes', metavar='NUM', type=int, default=1,
+        help='number of processes to use in parallel')
+    parser.add_argument(
+        '-L', '--log-level', metavar='LEVEL', type=str,
+        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+        default='INFO',
+        help='verbosity of logging output (standard log levels)')
+    return parser.parse_args()
+
 def main():
     """
     Read OCR files following the path scheme <directory>/<ID>.<suffix>,
@@ -27,19 +70,7 @@ def main():
 
     global lowercase_transducer, lm_transducer, flag_encoder, args, composition
     
-    parser = argparse.ArgumentParser(description='OCR post-correction ocrd-cor-asv-fst batch-processor tool')
-    parser.add_argument('directory', metavar='PATH', help='directory for input and output files')
-    parser.add_argument('-I', '--input-suffix', metavar='SUF', type=str, default='txt', help='input (OCR) filenames suffix')
-    parser.add_argument('-O', '--output-suffix', metavar='SUF', type=str, default='cor-asv-fst.txt', help='output (corrected) filenames suffix')
-    parser.add_argument('-P', '--punctuation', metavar='MODEL', type=str, choices=['bracket', 'lm', 'preserve'], default='bracket', help='how to model punctuation between words (bracketing rules, inter-word language model, or keep unchanged)')
-    parser.add_argument('-W', '--words-per-window', metavar='NUM', type=int, default=3, help='maximum number of words in one window')
-    parser.add_argument('-R', '--result-num', metavar='NUM', type=int, default=10, help='result paths per window')
-    parser.add_argument('-D', '--composition-depth', metavar='NUM', type=int, default=2, help='number of lexicon words that can be concatenated')
-    parser.add_argument('-J', '--rejection-weight', metavar='WEIGHT', type=float, default=1.5, help='transition weight for unchanged input window')
-    parser.add_argument('-A', '--apply-lm', action='store_true', default=False, help='also compose with n-gram language model for rescoring')
-    parser.add_argument('-Q', '--processes', metavar='NUM', type=int, default=1, help='number of processes to use in parallel')
-    parser.add_argument('-L', '--log-level', metavar='LEVEL', type=str, choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'], default='INFO', help='verbosity of logging output (standard log levels)') # WARN
-    args = parser.parse_args()
+    args = parse_arguments()
 
     logging.basicConfig(level=logging.getLevelName(args.log_level))
     
