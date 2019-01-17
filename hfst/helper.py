@@ -57,9 +57,27 @@ def create_dict(directory, suffix):
     return result_dict
 
 
+def convert_to_log_relative_freq(lexicon_dict, freq_threshold=2e-6): # /13 # 6e-6/12 # 1e-5/11.5
+    """Convert counts of dict: word -> count into dict with relative
+    frequencies: word -> relative_frequency."""
+
+    total_freq = sum(lexicon_dict.values())
+    print('converting dictionary of %d tokens / %d types' % (total_freq, len(lexicon_dict)))
+    for key in list(lexicon_dict.keys()):
+        abs_freq = lexicon_dict[key]
+        rel_freq = abs_freq / total_freq
+        if abs_freq <= 3 and rel_freq < freq_threshold:
+            print('pruning rare word form "%s" (%d/%f)' % (key, abs_freq, rel_freq))
+            del lexicon_dict[key]
+        else:
+            lexicon_dict[key] = -math.log(rel_freq)
+    return lexicon_dict
+
+
 def convert_to_relative_freq(lexicon_dict, freq_threshold=2e-6): # /13 # 6e-6/12 # 1e-5/11.5
     """Convert counts of dict: word -> count into dict with relative
     frequencies: word -> relative_frequency."""
+    # FIXME this function is deprecated -- remove as soon as no module uses it!
 
     total_freq = sum(lexicon_dict.values())
     print('converting dictionary of %d tokens / %d types' % (total_freq, len(lexicon_dict)))
@@ -130,6 +148,14 @@ def transducer_from_list(freq_list):
 
     print('wrote lemma nr %d' % i)
     return lexicon_transducer
+
+
+def transducer_from_dict(dictionary):
+    '''
+    Given a dictionary of strings and weights, build a transducer accepting
+    those strings with given weights.
+    '''
+    return hfst.fst(list(dictionary.items()))
 
 
 def save_transducer_from_txt(input_txt, output_hfst):
