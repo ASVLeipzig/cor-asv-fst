@@ -1,15 +1,17 @@
 from functools import reduce
 import argparse
 import re
-import spacy # to install models, do: `python -m spacy download de` after installation
+
+# to install models, do: `python -m spacy download de` after installation
+import spacy
 import spacy.tokenizer
 
 import helper
 
 
 def create_lexicon(lines, nlp):
-    """Create lexicon with frequencies from dict of lines. Words and punctation marks
-    are inserted into separate dicts."""
+    """Create lexicon with frequencies from dict of lines. Words and
+       punctation marks are inserted into separate dicts."""
 
     # TODO: Bindestriche behandeln. Momentan werden sie abgetrennt vor dem
     # Hinzufügen zum Lexikon. Man müsste halbe Worte weglassen und
@@ -102,6 +104,51 @@ def create_lexicon(lines, nlp):
 
     return lexicon_dict, punctation_dict, open_bracket_dict, close_bracket_dict
 
+def setup_spacy(use_gpu=False):
+    if use_gpu:
+        spacy.require_gpu()
+        spacy.util.use_gpu(0)
+    # disable everything we don't have at runtime either
+    nlp = spacy.load('de', disable=['parser', 'ner'])
+    infix_re = spacy.util.compile_infix_regex(
+        nlp.Defaults.infixes +
+        ['—',                   # numeric dash: (?<=[0-9])—(?=[0-9])
+         '/'])                  # maybe more restrictive?
+    suffix_re = spacy.util.compile_suffix_regex(
+        nlp.Defaults.suffixes +
+        ('/',)) # maybe more restrictive?
+    # '〟' as historic quotation mark (left and right)
+    # '〃' as historic quotation mark (at the start of the line!)
+    # '‟' as historic quotation mark (at the start of the line!)
+    # '›' and '‹' as historic quotation marks (maybe goes away with NFC?)
+    # '⟨' and '⟩' parentheses (maybe goes away with NFC?)
+    # '⁽' and '⁾' parentheses (maybe goes away with NFC?)
+    # '〈' and '〉' brackets (maybe goes away with NFC?)
+    # '‹' and '›' as historic quotation mark
+    # '’' as historic apostrophe
+    # '—' as dash, even when written like a prefix
+    # \u+feff (byte order mark) as prefix
+
+    nlp.tokenizer = spacy.tokenizer.Tokenizer(
+        nlp.vocab,
+        token_match=nlp.tokenizer.token_match,
+        prefix_search=nlp.tokenizer.prefix_search,
+        suffix_search=nlp.tokenizer.suffix_search,
+        infix_finditer=infix_re.finditer)
+    return nlp
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(
+        description='OCR post-correction ocrd-cor-asv-fst lexicon extractor')
+    parser.add_argument(
+        'directory', metavar='PATH', help='directory for input files')
+    parser.add_argument(
+        '-G', '--gt-suffix', metavar='SUF', type=str, default='gt.txt',
+        help='clean (Ground Truth) filenames suffix') # useful for DTA (.tcf.txt)
+    parser.add_argument(
+        '-U', '--use-gpu', action='store_true', default=False,
+        help='use GPU instead of CPU for tokenization (spacy)')
+    return parser.parse_args()
 
 def main():
     """Read text data, tokenize it, and count the words, separated into
@@ -109,11 +156,7 @@ def main():
     to txt files with word and (negative logarithm of) relative_frequency
     tab-separated."""
 
-    parser = argparse.ArgumentParser(description='OCR post-correction ocrd-cor-asv-fst lexicon extractor')
-    parser.add_argument('directory', metavar='PATH', help='directory for input files')
-    parser.add_argument('-G', '--gt-suffix', metavar='SUF', type=str, default='gt.txt', help='clean (Ground Truth) filenames suffix') # useful for DTA (.tcf.txt)
-    parser.add_argument('-U', '--use-gpu', action='store_true', default=False, help='use GPU instead of CPU for tokenization (spacy)')
-    args = parser.parse_args()
+    args = parse_arguments()
 
     # load dta19-reduced data
     #path = '../dta19-reduced/traindata/'
@@ -131,33 +174,9 @@ def main():
     #fraktur4_dict = create_dict(path, 'Fraktur4')
     ##foo4_dict = create_dict(path, 'foo4')
 
-    # get dicts containing a lexicon of words, punctuation, opening/closing brackets
-    if args.use_gpu:
-        spacy.require_gpu()
-        spacy.util.use_gpu(0)
-    nlp = spacy.load('de', disable=['parser', 'ner']) # everything we don't have at runtime either
-    infix_re = spacy.util.compile_infix_regex(nlp.Defaults.infixes +
-                                              ['—', # numeric dash: (?<=[0-9])—(?=[0-9])
-                                               '/']) # maybe more restrictive?
-    suffix_re = spacy.util.compile_suffix_regex(nlp.Defaults.suffixes +
-                                                ('/',)) # maybe more restrictive?
-    # '〟' as historic quotation mark (left and right)
-    # '〃' as historic quotation mark (at the start of the line!)
-    # '‟' as historic quotation mark (at the start of the line!)
-    # '›' and '‹' as historic quotation marks (maybe goes away with NFC?)
-    # '⟨' and '⟩' parentheses (maybe goes away with NFC?)
-    # '⁽' and '⁾' parentheses (maybe goes away with NFC?)
-    # '〈' and '〉' brackets (maybe goes away with NFC?)
-    # '‹' and '›' as historic quotation mark
-    # '’' as historic apostrophe
-    # '—' as dash, even when written like a prefix
-    # \u+feff (byte order mark) as prefix
-    nlp.tokenizer = spacy.tokenizer.Tokenizer(nlp.vocab,
-                                              token_match=nlp.tokenizer.token_match,
-                                              prefix_search=nlp.tokenizer.prefix_search,
-                                              suffix_search=nlp.tokenizer.suffix_search,
-                                              infix_finditer=infix_re.finditer)
-    lexicon_dict, punctuation_dict, open_bracket_dict, close_bracket_dict = create_lexicon(gt_data, nlp)
+    nlp = setup_spacy(args.use_gpu)
+    lexicon_dict, punctuation_dict, open_bracket_dict, close_bracket_dict = \
+        create_lexicon(gt_data, nlp)
 
     #line_id = '05110'
 
@@ -179,6 +198,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-
 
