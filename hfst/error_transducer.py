@@ -365,12 +365,12 @@ def main():
         if os.access(args.directory, os.R_OK|os.X_OK):
             # read GT data and OCR data (from dta19_reduced)
             #path = '../dta19-reduced/traindata/'
-            gt_dict = helper.create_dict(args.directory + "/", 'gt.txt')
+            gt_dict = helper.create_dict(args.directory, 'gt.txt')
             
             #frak3_dict = create_dict(path, 'deu-frak3')
             #fraktur4_dict = helper.create_dict(path, 'Fraktur4')
             #foo4_dict = create_dict(path, 'foo4')
-            ocr_dict = helper.create_dict(args.directory + "/", args.input_suffix)
+            ocr_dict = helper.create_dict(args.directory, args.input_suffix)
         else:
             raise argparse.ArgumentTypeError("not allowed to read directory %s" % args.directory)
     elif os.path.isfile(args.directory):

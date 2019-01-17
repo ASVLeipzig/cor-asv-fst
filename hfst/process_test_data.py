@@ -1,4 +1,5 @@
 from os import listdir
+import os.path
 
 import logging
 import argparse
@@ -188,8 +189,8 @@ def main():
     
             # read and process test data
             
-            gt_dict = helper.create_dict(args.directory + "/", 'gt.txt')
-            ocr_dict = helper.create_dict(args.directory + "/", args.input_suffix)
+            gt_dict = helper.create_dict(args.directory, 'gt.txt')
+            ocr_dict = helper.create_dict(args.directory, args.input_suffix)
 
             def show_error(exception):
                 logging.error(exception)
@@ -250,7 +251,8 @@ def process(basename, input_str):
             else:
                 suffix = args.output_suffix
 
-            with open(args.directory + "/" + basename + "." + suffix, 'w') as f:
+            filename = basename + "." + suffix
+            with open(os.path.join(args.directory, filename), 'w') as f:
                 f.write(output_str)
     
     except Exception as e:

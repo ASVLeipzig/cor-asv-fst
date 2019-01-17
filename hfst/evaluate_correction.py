@@ -253,9 +253,9 @@ def main():
     #ocr_suffix = 'Fraktur4'
     #corrected_suffix = ocr_suffix + '_preserve_2_no_space'
     
-    ocr_dict = helper.create_dict(args.directory + "/", args.input_suffix)
-    gt_dict = helper.create_dict(args.directory + "/", 'gt.txt')
-    cor_dict = helper.create_dict(args.directory + "/", args.output_suffix)
+    ocr_dict = helper.create_dict(args.directory, args.input_suffix)
+    gt_dict = helper.create_dict(args.directory, 'gt.txt')
+    cor_dict = helper.create_dict(args.directory, args.output_suffix)
 
     if args.metric == 'precision-recall':
         TP = 0

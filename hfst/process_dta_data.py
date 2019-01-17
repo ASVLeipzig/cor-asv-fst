@@ -161,8 +161,8 @@ def main():
     # load dta19-reduced data
     #path = '../dta19-reduced/traindata/'
     #path = '../dta19-reduced/testdata/'
-    gt_filenames = helper.get_filenames(args.directory + "/", args.gt_suffix)
-    gt_data = helper.generate_content(args.directory + "/", gt_filenames)
+    gt_filenames = helper.get_filenames(args.directory, args.gt_suffix)
+    gt_data = helper.generate_content(args.directory, gt_filenames)
 
     # load dta-komplett
     #dta_file = '../Daten/ngram-model/gesamt_dta.txt'

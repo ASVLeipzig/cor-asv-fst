@@ -1,6 +1,7 @@
 import hfst
-from os import listdir
 import math
+from os import listdir
+import os.path
 
 
 def save_transducer(filename, transducer):
@@ -33,12 +34,12 @@ def get_filenames(directory, suffix):
 def generate_content(directory, filenames):
     """Generate tuples of file basename and file content string for given filenames and directory."""
 
-    for x in filenames:
-        with open(directory + x) as f:
+    for filename in filenames:
+        with open(os.path.join(directory, filename)) as f:
             for line in f:
                 line = line.strip()
                 if line:
-                    yield (x.split('.')[0], line)
+                    yield (filename.split('.')[0], line)
 
 
 def create_dict(directory, suffix):
