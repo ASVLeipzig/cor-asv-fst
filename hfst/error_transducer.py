@@ -321,11 +321,11 @@ def is_punctuation_edit(raw_char, gt_char):
         return False
 
     # edit to an alphanumeric character
-    if gt_char == "ͤ" or gt_char != GAP_ELEMENT and gt_char.isalnum():
+    if gt_char == "\u0364" or gt_char != GAP_ELEMENT and gt_char.isalnum():
         return False
 
     # alphanumeric to epsilon or space
-    if gt_char in [GAP_ELEMENT, " "] and (raw_char == "ͤ" or raw_char != GAP_ELEMENT and raw_char.isalnum()):
+    if gt_char in [GAP_ELEMENT, " "] and (raw_char == "\u0364" or raw_char != GAP_ELEMENT and raw_char.isalnum()):
         return False
 
     # all other edits modify output punctuation

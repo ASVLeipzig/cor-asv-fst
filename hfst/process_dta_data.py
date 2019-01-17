@@ -26,7 +26,7 @@ def create_lexicon(lines, nlp):
     open_bracket_dict = {}
     close_bracket_dict = {}
     umlautset = set("äöüÄÖÜ")
-    umlauttrans = str.maketrans({'ä': 'aͤ', 'ö': 'oͤ', 'ü': 'uͤ', 'Ä': 'Aͤ', 'Ö': 'Oͤ', 'Ü': 'Uͤ'})
+    umlauttrans = str.maketrans({'ä': 'a\u0364', 'ö': 'o\u0364', 'ü': 'u\u0364', 'Ä': 'A\u0364', 'Ö': 'O\u0364', 'Ü': 'U\u0364'})
     num_re = re.compile('[0-9]{1,3}([,.]?[0-9]{3})*([.,][0-9]*)?')
     # '−' as sign prefix
     # '√' as prefix?

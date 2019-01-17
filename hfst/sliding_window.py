@@ -739,7 +739,7 @@ def load_transducers_bracket(error_file,
         lexicon_transducer.compose(morphology_transducer)
     
     # allow both decomposed (as in lexicon file) and precomposed (modern) umlaut variants:
-    precompose_transducer = hfst.regex('[aͤ:ä|oͤ:ö|uͤ:ü|Aͤ:Ä|Oͤ:Ö|Uͤ:Ü|?]*')
+    precompose_transducer = hfst.regex('[a\u0364:ä|o\u0364:ö|u\u0364:ü|A\u0364:Ä|O\u0364:Ö|U\u0364:Ü|?]*')
     lexicon_transducer.compose(precompose_transducer)
 
     # make sure above lexical transductions never enter the result:
@@ -822,7 +822,7 @@ def load_transducers_preserve_punctuation(error_file,
         lexicon_transducer.compose(morphology_transducer)
     
     # allow both decomposed (as in lexicon file) and precomposed (modern) umlaut variants:
-    precompose_transducer = hfst.regex('[aͤ:ä|oͤ:ö|uͤ:ü|Aͤ:Ä|Oͤ:Ö|Uͤ:Ü|?]*')
+    precompose_transducer = hfst.regex('[a\u0364:ä|o\u0364:ö|u\u0364:ü|A\u0364:Ä|O\u0364:Ö|U\u0364:Ü|?]*')
     lexicon_transducer.compose(precompose_transducer)
     
     # make sure above lexical transductions never enter the result:
@@ -914,7 +914,7 @@ def load_transducers_inter_word(error_file,
         lexicon_transducer.compose(morphology_transducer)
     
     # allow both decomposed (as in lexicon file) and precomposed (modern) umlaut variants:
-    precompose_transducer = hfst.regex('[aͤ:ä|oͤ:ö|uͤ:ü|Aͤ:Ä|Oͤ:Ö|Uͤ:Ü|?]*')
+    precompose_transducer = hfst.regex('[a\u0364:ä|o\u0364:ö|u\u0364:ü|A\u0364:Ä|O\u0364:Ö|U\u0364:Ü|?]*')
     lexicon_transducer.compose(precompose_transducer)
     
     # make sure above lexical transductions never enter the result:
