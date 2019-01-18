@@ -388,6 +388,35 @@ def combine_error_transducers(transducers, max_context, max_errors):
     return combined_transducers_dicts
 
 
+def load_input_from_csv(filename):
+    'Load training data from a CSV file.'
+    if os.access(filename, os.R_OK):
+        with open(filename, mode='r', encoding='utf-8') as fp:
+            reader = csv.reader(
+                fp, delimiter = '\t', quotechar = None, escapechar = None,
+                doublequote = False, skipinitialspace = False,
+                lineterminator = '\n', quoting = csv.QUOTE_NONE)
+            ocr_dict, gt_dict = {}, {}
+            for i, (ocr_str, gt_str) in enumerate(reader):
+                ocr_dict[i] = ocr_str
+                gt_dict[i] = gt_str
+        return ocr_dict, gt_dict
+    else:
+        raise argparse.ArgumentTypeError(
+            'not allowed to read file %s' % filename)
+
+
+def load_input_from_dir(directory, input_suffix, gt_suffix):
+    'Load training data from a directory.'
+    if os.path.isdir(directory) and os.access(directory, os.R_OK|os.X_OK):
+        ocr_dict = helper.create_dict(directory, input_suffix)
+        gt_dict = helper.create_dict(directory, gt_suffix)
+        return ocr_dict, gt_dict
+    else:
+        raise argparse.ArgumentTypeError(
+            'unable to read directory %s' % directory)
+
+
 def parse_arguments():
     parser = argparse.ArgumentParser(
         description='OCR post-correction ocrd-cor-asv-fst error model creator')
@@ -424,35 +453,11 @@ def main():
     """
 
     args = parse_arguments()
-
-    if os.path.isdir(args.directory):
-        if os.access(args.directory, os.R_OK|os.X_OK):
-            gt_dict = helper.create_dict(args.directory, args.gt_suffix)
-            ocr_dict = helper.create_dict(args.directory, args.input_suffix)
-        else:
-            raise argparse.ArgumentTypeError("not allowed to read directory %s" % args.directory)
-    elif os.path.isfile(args.directory):
-        if os.access(args.directory, os.R_OK):
-            class gt_table(csv.Dialect):
-                delimiter = '\t'
-                quotechar = None
-                escapechar = None
-                doublequote = False
-                skipinitialspace = False
-                lineterminator = '\n'
-                quoting = csv.QUOTE_NONE
-            
-            with open(args.directory, mode='r', encoding='utf-8') as gt_file:
-                gt_reader = csv.reader(gt_file, dialect=gt_table())
-                gt_dict = {}
-                ocr_dict = {}
-                for i, (ocr, gt) in enumerate(gt_reader):
-                    ocr_dict[i] = ocr
-                    gt_dict[i] = gt
-        else:
-            raise argparse.ArgumentTypeError("not allowed to read file %s" % args.directory)
-    else:
-        raise argparse.ArgumentTypeError("invalid path %s" % args.directory)
+    ocr_dict, gt_dict = \
+        load_input_from_csv(args.directory) \
+        if os.path.isfile(args.directory) \
+        else load_input_from_dir(args.directory, args.input_suffix,
+                                 args.gt_suffix)
 
     # get list of confusion dicts with different context sizes
     confusion_dicts = get_confusion_dicts(gt_dict, ocr_dict, args.max_context)
@@ -467,6 +472,7 @@ def main():
         single_error_transducers,
         args.max_context,
         args.max_errors)
+
     # save the combined transducers to files
     for tr_dict in combined_tr_dicts:
         filename = \
