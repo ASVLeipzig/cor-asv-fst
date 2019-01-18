@@ -344,32 +344,41 @@ def no_punctuation_edits(confusion):
             return False
     return True
 
+def parse_arguments():
+    parser = argparse.ArgumentParser(
+        description='OCR post-correction ocrd-cor-asv-fst error model creator')
+    parser.add_argument(
+        'directory', metavar='PATH',
+        help='directory (or CSV file) for input and GT files')
+    parser.add_argument(
+        '-I', '--input-suffix', metavar='SUF', type=str, default='txt',
+        help='input (OCR) filenames suffix')
+    parser.add_argument(
+        '-G', '--gt-suffix', metavar='SUF', type=str, default='gt.txt',
+        help='clean (Ground Truth) filenames suffix')
+    parser.add_argument(
+        '-C', '--max-context', metavar='NUM', type=int, default=3,
+        help='maximum size of context count edits at')
+    parser.add_argument(
+        '-P', '--preserve-punctuation', action='store_true', default=False,
+        help='ignore edits to/from non-alphanumeric or non-space characters')
+    return parser.parse_args()
+
 def main():
     """
-    Read GT and OCR files following the path scheme <directory>/<ID>.<suffix>
-    and <directory>/<ID>.gt.txt, where each file contains one line of text.
-    Align GT and OCR lines for same IDs, count n-gram pair occurrences of n={1,2,3}
-    for differing lines.
+    Read GT and OCR files following the path scheme
+    <directory>/<ID>.<input_suffix> and <directory>/<ID>.<gt_suffix>, where
+    each file contains one line of text. Align GT and OCR lines for same IDs,
+    count n-gram pair occurrences of n={1,2,3} for differing lines.
     Write confusions frequencies to confusion_<n>.txt, 
     and create a simple error_transducer_<n>.hfst.
     """
 
-    parser = argparse.ArgumentParser(description='OCR post-correction ocrd-cor-asv-fst error model creator')
-    parser.add_argument('directory', metavar='PATH', help='directory (or CSV file) for input and GT files')
-    parser.add_argument('-I', '--input-suffix', metavar='SUF', type=str, default='txt', help='input (OCR) filenames suffix')
-    parser.add_argument('-C', '--max-context', metavar='NUM', type=int, default=3, help='maximum size of context count edits at')
-    parser.add_argument('-P', '--preserve-punctuation', action='store_true', default=False, help='ignore edits to/from non-alphanumeric or non-space characters')
-    args = parser.parse_args()
+    args = parse_arguments()
 
     if os.path.isdir(args.directory):
         if os.access(args.directory, os.R_OK|os.X_OK):
-            # read GT data and OCR data (from dta19_reduced)
-            #path = '../dta19-reduced/traindata/'
-            gt_dict = helper.create_dict(args.directory, 'gt.txt')
-            
-            #frak3_dict = create_dict(path, 'deu-frak3')
-            #fraktur4_dict = helper.create_dict(path, 'Fraktur4')
-            #foo4_dict = create_dict(path, 'foo4')
+            gt_dict = helper.create_dict(args.directory, args.gt_suffix)
             ocr_dict = helper.create_dict(args.directory, args.input_suffix)
         else:
             raise argparse.ArgumentTypeError("not allowed to read directory %s" % args.directory)
