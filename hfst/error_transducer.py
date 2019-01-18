@@ -345,6 +345,49 @@ def no_punctuation_edits(confusion):
     return True
 
 
+def compile_single_error_transducer(confusion_dict, preserve_punct=False):
+    confusion_list = preprocess_confusion_dict(confusion_dict)
+    if preserve_punct:
+        confusion_list = list(filter(no_punctuation_edits, confusion_list))
+    # create (non-complete) error_transducer and optimize it
+    tr = transducer_from_list(confusion_list)
+    optimize_error_transducer(tr)
+    return tr
+
+
+def combine_error_transducers(transducers, max_context, max_errors):
+    contexts = []
+    for n in range(1,max_context+1):
+        for m in range(1,n+1):
+            contexts.append(list(range(m,n+1)))
+    
+    # FIXME: make proper back-off transducer
+    
+    acceptor = hfst.regex('?*')
+    combined_transducers_dicts = []
+    for context in contexts:
+        print('Context: ', context)
+        one_error = hfst.empty_fst()
+        for n in context:
+            one_error.disjunct(transducers[n-1])
+        
+        # TODO: find out why both minimize and minimize+remove_epsilons makes
+        #       FSTs extremely huge and slow at runtime
+        # TODO: find out why incremental concat+disjoin with previous ET
+        #       (starting with all-acceptor) is larger and slower
+        for num_errors in range(1, max_errors+1):
+            print('Number of errors:', num_errors)
+            result_tr = acceptor.copy()
+            result_tr.concatenate(one_error)
+            result_tr.repeat_n_minus(num_errors)
+            result_tr.concatenate(acceptor)
+            combined_transducers_dicts.append({
+                'max_error' : num_errors,
+                'context' : ''.join(map(str, context)),
+                'transducer' : result_tr })
+    return combined_transducers_dicts
+
+
 def parse_arguments():
     parser = argparse.ArgumentParser(
         description='OCR post-correction ocrd-cor-asv-fst error model creator')
@@ -414,78 +457,22 @@ def main():
     # get list of confusion dicts with different context sizes
     confusion_dicts = get_confusion_dicts(gt_dict, ocr_dict, args.max_context)
 
-    #n = 3
-    #preserve_punctuation = False
+    single_error_transducers = \
+        [compile_single_error_transducer(
+            confusion_dicts[i],
+            preserve_punct=args.preserve_punctuation) \
+         for i in range(1, args.max_context+1)]
 
-    for n in range(1, args.max_context+1): # considered ngrams
+    combined_tr_dicts = combine_error_transducers(
+        single_error_transducers,
+        args.max_context,
+        args.max_errors)
+    # save the combined transducers to files
+    for tr_dict in combined_tr_dicts:
+        filename = \
+            'max_error_{max_error}_context_{context}.hfst'.format(**tr_dict)
+        tr_dict['transducer'].write_to_file(filename)
 
-        print('n: ', str(n))
-
-        # convert to relative frequencies
-        confusion_list = preprocess_confusion_dict(confusion_dicts[n])
-
-        # write confusion to confusion_<n>.txt
-        write_frequency_list(confusion_list, 'confusion_' + str(n) + '.txt')
-        print('length of confusion list for context size n:', len(confusion_list))
-
-        if args.preserve_punctuation:
-            confusion_list = list(filter(no_punctuation_edits, confusion_list))
-
-        print('length of confusion list after filtering:', len(confusion_list))
-
-        # create (non-complete) error_transducer and optimize it
-        error_transducer = transducer_from_list(confusion_list)
-        optimize_error_transducer(error_transducer)
-
-        # write transducer to file
-        error_transducer.write_to_file('error_transducer_' + str(n) + '.hfst')
-
-    ##########################
-    # error_transducer_complete.main() starts here
-
-    error_transducers = {}
-    for n in range(1,args.max_errors+1):
-        error_transducers[n] = hfst.HfstTransducer.read_from_file('error_transducer_' + str(n) + '.hfst')
-
-    contexts = []
-    for n in range(1,args.max_context+1):
-        for m in range(1,n+1):
-            contexts.append(list(range(m,n+1)))
-    
-    # FIXME: make proper back-off transducer
-    
-    acceptor = hfst.regex('?')
-    acceptor.repeat_star()
-    acceptor.minimize()
-
-    for context in contexts:
-
-        print('Context: ', context)
-
-        error_transducer = hfst.HfstTransducer()
-        
-        if n in context:
-            error_transducer.disjunct(error_transducers[n])
-        
-        one_error = acceptor.copy()
-        one_error.concatenate(error_transducer)
-        #one_error.optionalize()
-        
-        # TODO: find out why both minimize and minimize+remove_epsilons makes FSTs extremely huge and slow at runtime
-        # TODO: find out why incremental concat+disjoin with previous ET (starting with all-acceptor) is larger and slower
-        #error_transducer = acceptor.copy()
-        for num_errors in range(1,args.max_errors+1):
-            print('Number of errors:', num_errors)
-            result_transducer = one_error.copy()
-            #result_transducer.repeat_n(num_errors) # instead of reapeat_n_minus: together with optionalize above
-            result_transducer.repeat_n_minus(num_errors)
-            #result_transducer.concatenate(error_transducer) # N …
-            #result_transducer.disjunct(error_transducer) # … ∪ N-1
-            
-            error_transducer =  result_transducer
-            error_transducer.concatenate(acceptor)
-            
-            error_transducer.write_to_file('max_error_' + str(num_errors) + '_context_'+ ''.join(map(str,context)) + '.hfst')
 
 if __name__ == '__main__':
     main()
