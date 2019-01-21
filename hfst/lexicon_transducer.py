@@ -1,6 +1,8 @@
 import argparse
+from collections import defaultdict, namedtuple
 from functools import reduce
 import hfst
+from operator import itemgetter
 import re
 
 # to install models, do: `python -m spacy download de` after installation
@@ -10,108 +12,23 @@ import spacy.tokenizer
 import helper
 
 
+MIN_LINE_LENGTH = 3
+OPENING_BRACKETS = ['"', '»', '(', '„']
+CLOSING_BRACKETS = ['"', '«', ')', '“', '‘', "'"]
+UMLAUTS = { 'ä': 'a\u0364', 'ö': 'o\u0364', 'ü': 'u\u0364', 'Ä': 'A\u0364',
+            'Ö': 'O\u0364', 'Ü': 'U\u0364'}
+
+Lexicon = namedtuple(
+    'Lexicon',
+     ['opening_brackets', 'closing_brackets', 'punctuation', 'words'])
+
+
 def get_digit_tuples():
     """Gives tuple of all pairs of identical numbers.
     This is used to replace the ('1', '1') transitions in the lexicon by
     all possible numbers."""
 
     return tuple([(str(i), str(i)) for i in range(10)])
-
-
-def create_lexicon(lines, nlp):
-    """Create lexicon with frequencies from dict of lines. Words and
-       punctation marks are inserted into separate dicts."""
-
-    # TODO: Bindestriche behandeln. Momentan werden sie abgetrennt vor dem
-    # Hinzufügen zum Lexikon. Man müsste halbe Worte weglassen und
-    # zusammengesetzte Zeilen für die Erstellung des Lexikons nutzen.
-    # TODO: Groß-/Kleinschreibung wie behandeln? Momentan wird jedes
-    # Wort in der kleingeschriebenen und der großgeschriebene Variante
-    # zum Lexikon hinzugefügt (mit gleicher Häufigkeit).
-    # Später vermutlich eher durch sowas wie {CAP}?
-
-    lexicon_dict = {}
-    punctation_dict = {}
-    open_bracket_dict = {}
-    close_bracket_dict = {}
-    umlautset = set("äöüÄÖÜ")
-    umlauttrans = str.maketrans({'ä': 'a\u0364', 'ö': 'o\u0364', 'ü': 'u\u0364', 'Ä': 'A\u0364', 'Ö': 'O\u0364', 'Ü': 'U\u0364'})
-    num_re = re.compile('[0-9]{1,3}([,.]?[0-9]{3})*([.,][0-9]*)?')
-    # '−' as sign prefix
-    # '√' as prefix?
-    # ¹²³⁴⁵⁶⁷⁸⁹⁰ digits (maybe goes away with NFC?)
-    
-    if type(lines) is dict:
-        lines = lines.values()
-    elif hasattr(lines, '__iter__'): # accept generators
-        lines = map(lambda x: x[1], lines)
-    else:
-        raise Exception('Creating lexicon failed: %s given, but dict or list expected' % type(lines))
-
-    #for line in lines[0:100]:
-    for line in lines:
-        #print(line)
-
-        if len(line) < 3:
-            continue
-
-        # tokenize line
-        doc = nlp(line)
-
-        for token in doc:
-            #print(token.text, '\t', token.lemma_, '\t', token.pos_,
-            #token.tag_, token.dep_, token.shape_, token.is_alpha, token.is_stop)
-
-            text = token.text.strip()
-
-            if len(text) == 0:
-                continue
-
-            # if word ends with hyphen, add hyphen as a punctuation mark
-            if len(text) > 1 and text[-1] == '—':
-                text = text[0:-1]
-                punctation_dict['—'] = punctation_dict.setdefault('—', 0) + 1
-
-            # handle open bracket marks
-            if text in ['"', '»', '(', '„']:
-                open_bracket_dict[text] = open_bracket_dict.setdefault(text, 0) + 1
-
-            # handle close bracket marks
-            elif text in ['"', '«', ')', '“', '‘', "'"]:
-                close_bracket_dict[text] = close_bracket_dict.setdefault(text, 0) + 1
-
-            # punctuation marks must not contain letters or numbers
-            # hyphens in the middle of the text are treated as words
-            elif token.pos_ == 'PUNCT' and text != '—' and \
-                not reduce(lambda x,y: x or y, list(map(lambda x: x.isalpha()\
-                or x.isnumeric(), text)), False):
-                punctation_dict[text] = punctation_dict.setdefault(text, 0) + 1
-
-            else:
-
-                # numbers are normalized to 1 to be replaced by a number
-                # transducer later, but the length of a number is preserved
-                if text.isdigit() or num_re.match(text):
-                    text = len(text) * '1'
-                    lexicon_dict[text] = lexicon_dict.setdefault(text, 0) + 1
-
-                else:
-                    # normalize umlauts to decomposed form (but precomposed variant will be allowed at runtime too):
-                    if umlautset.intersection(set(text)):
-                        text = text.translate(umlauttrans)
-                    # add a word both uppercase and lowercase
-                    # FIXME: instead gather statistics separately, then keep only most frequent form (but allow titlecase after sentence punctuation or beginning of line at runtime too)
-                    lexicon_dict[text] = lexicon_dict.setdefault(text, 0) + 1
-                    # despite Python #6412, str.istitle() and str.title() are still buggy with combining diacritics # if token.text.istitle():
-                    if token.text[0].isupper():
-                        recap = text.lower()
-                        lexicon_dict[recap] = lexicon_dict.setdefault(recap, 0) + 1
-                    else:
-                        # despite Python #6412, str.istitle() and str.title() are still buggy with combining diacritics # recap = text.title()
-                        recap = text.capitalize()
-                        lexicon_dict[recap] = lexicon_dict.setdefault(recap, 0) + 1
-
-    return lexicon_dict, punctation_dict, open_bracket_dict, close_bracket_dict
 
 
 def setup_spacy(use_gpu=False):
@@ -146,6 +63,84 @@ def setup_spacy(use_gpu=False):
         suffix_search=nlp.tokenizer.suffix_search,
         infix_finditer=infix_re.finditer)
     return nlp
+
+
+def build_lexicon(lines):
+    """Create lexicon with frequencies from dict of lines. Words and
+    punctation marks are inserted into separate dicts."""
+
+    # TODO: Bindestriche behandeln. Momentan werden sie abgetrennt vor dem
+    # Hinzufügen zum Lexikon. Man müsste halbe Worte weglassen und
+    # zusammengesetzte Zeilen für die Erstellung des Lexikons nutzen.
+    # TODO: Groß-/Kleinschreibung wie behandeln? Momentan wird jedes
+    # Wort in der kleingeschriebenen und der großgeschriebene Variante
+    # zum Lexikon hinzugefügt (mit gleicher Häufigkeit).
+    # Später vermutlich eher durch sowas wie {CAP}?
+
+    def _is_opening_bracket(token):
+        return token.text in OPENING_BRACKETS
+
+    def _is_closing_bracket(token):
+        return token.text in CLOSING_BRACKETS
+
+    def _is_punctuation(token):
+        # punctuation marks must not contain letters or numbers
+        # hyphens in the middle of the text are treated as words
+        return token.pos_ == 'PUNCT' and token.text != '—' and \
+            not any(c.isalpha() or c.isnumeric() for c in token.text)
+
+    def _handle_problematic_cases(token):
+        if token.text.strip() != token.text:
+            logging.warning('Token contains leading or trailing '
+                            'whitespaces: \'{}\''.format(token.text))
+        if len(token.text) > 1 and token.text.endswith('—'):
+            logging.warning('Possible tokenization error: \'{}\''
+                            .format(token.text))
+
+    lexicon = Lexicon(
+        opening_brackets=defaultdict(lambda: 0),
+        closing_brackets=defaultdict(lambda: 0),
+        punctuation=defaultdict(lambda: 0),
+        words=defaultdict(lambda: 0))
+    umlauttrans = str.maketrans(UMLAUTS)
+    # '−' as sign prefix
+    # '√' as prefix?
+    # ¹²³⁴⁵⁶⁷⁸⁹⁰ digits (maybe goes away with NFC?)
+    num_re = re.compile('[0-9]{1,3}([,.]?[0-9]{3})*([.,][0-9]*)?')
+    nlp = setup_spacy()
+    
+    if isinstance(lines, dict):
+        lines = lines.values()
+    elif hasattr(lines, '__iter__'): # accept generators
+        lines = map(itemgetter(1), lines)
+    else:
+        raise RuntimeError('Creating lexicon failed: %s given, but dict or '
+                           'list expected' % type(lines))
+
+    for line in lines:
+        if len(line) < MIN_LINE_LENGTH:
+            continue
+        for token in nlp(line):
+            _handle_problematic_cases(token)
+            if _is_opening_bracket(token):
+                lexicon.opening_brackets[token.text] += 1
+            elif _is_closing_bracket(token):
+                lexicon.closing_brackets[token.text] += 1
+            elif _is_punctuation(token):
+                lexicon.punctuation[token.text] += 1
+            else:
+                text = token.text.translate(umlauttrans)
+                if text.isdigit() or num_re.match(text):
+                    text = len(text) * '1'
+                lexicon.words[text] += 1
+                # include also the (un)capitalized variant
+                recap = text.lower() \
+                        if text[0].isupper() \
+                        else text.capitalize()
+                if recap != text:
+                    lexicon.words[recap] += 1
+
+    return lexicon
 
 
 def parse_arguments():
@@ -188,9 +183,7 @@ def main():
     #fraktur4_dict = create_dict(path, 'Fraktur4')
     ##foo4_dict = create_dict(path, 'foo4')
 
-    nlp = setup_spacy(args.use_gpu)
-    lexicon_dict, punctuation_dict, open_bracket_dict, close_bracket_dict = \
-        create_lexicon(gt_data, nlp)
+    lexicon = build_lexicon(gt_data)
 
     #line_id = '05110'
 
@@ -199,16 +192,14 @@ def main():
     #print(fraktur4_dict[line_id])
     #print(foo4_dict[line_id])
 
-    # get log-relative frequency of absolute counts
-    lexicon_dict = helper.convert_to_log_relative_freq(lexicon_dict)
-    punctuation_dict = helper.convert_to_log_relative_freq(punctuation_dict)
-    open_bracket_dict = helper.convert_to_log_relative_freq(open_bracket_dict)
-    close_bracket_dict = helper.convert_to_log_relative_freq(close_bracket_dict)
-
-    lexicon_transducer = helper.transducer_from_dict(lexicon_dict)
-    punctuation_transducer = helper.transducer_from_dict(punctuation_dict)
-    open_bracket_transducer = helper.transducer_from_dict(open_bracket_dict)
-    close_bracket_transducer = helper.transducer_from_dict(close_bracket_dict)
+    lexicon_transducer = helper.transducer_from_dict(
+        helper.convert_to_log_relative_freq(lexicon.words))
+    punctuation_transducer = helper.transducer_from_dict(
+        helper.convert_to_log_relative_freq(lexicon.punctuation))
+    open_bracket_transducer = helper.transducer_from_dict(
+        helper.convert_to_log_relative_freq(lexicon.opening_brackets))
+    close_bracket_transducer = helper.transducer_from_dict(
+        helper.convert_to_log_relative_freq(lexicon.closing_brackets))
 
     # in the lexicon dict, numbers are counted as sequences of 1
     # thus, they are replaced by any possible number of the according length
