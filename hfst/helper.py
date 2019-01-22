@@ -104,7 +104,7 @@ def write_lexicon(lexicon_dict, filename, log=True):
     with open(filename, 'w') as f:
         for word, freq in lexicon_list:
             if word == '':
-                word = '@_EPSILON_SYMBOL_@'
+                word = hfst.EPSILON
             if log:
                 f.write(word + '\t' + str(- math.log(freq)) + '\n')
             else:
@@ -124,7 +124,7 @@ def read_lexicon(filename):
             word, frequency_class  = line.split('\t')
             if len(word) > 1:
                 word = word.strip()
-            if word == '@_EPSILON_SYMBOL_@':
+            if word == hfst.EPSILON:
                 word = ''
             freq_list.append((word, word, float(frequency_class)))
 

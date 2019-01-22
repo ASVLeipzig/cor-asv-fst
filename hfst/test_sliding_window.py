@@ -49,7 +49,7 @@ def get_best_result(input_str):
 
     complete_paths = hfst.HfstTransducer(complete_output).extract_paths(max_number=1, max_cycles=0)
 
-    return list(complete_paths.items())[0][1][0][0].replace('@_EPSILON_SYMBOL_@', '')
+    return list(complete_paths.items())[0][1][0][0].replace(hfst.EPSILON, '')
 
 
 def test_first_word_deleted():
