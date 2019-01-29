@@ -682,264 +682,164 @@ def lexicon_add_compounds(lexicon_transducer, composition_depth):
     return lexicon_transducer
 
 
-def load_transducers_bracket(error_file,
-    punctuation_file,
-    lexicon_file,
-    open_bracket_file,
-    close_bracket_file,
-    flag_encoder,
-    composition_depth=1,
-    words_per_window=3,
-    morphology_file=None):
-    """
-    Load transducers for the bracket model, including the error FST,
-    lexicon FSA, morphology FST, punctuation FSA, and opening/closing-bracket FSA.
-    
-    Amend the error FST, also trying to delete flags when deleting spaces.
-    
-    Amend the lexicon FSA for compound words, and for decomposed umlauts.
-    Compose with morphology to extend further, and project to an FSA.
-    
-    Concatenate the lexicon FSAs to a single-token FSA, then repeat for
-    given words_per_window, synchronizing each word with flags.
-    """
-    
-    # load transducers
-    flag_acceptor = get_flag_acceptor(flag_encoder)
-    space_transducer = hfst.regex('% :% ')
-    error_transducer = helper.load_transducer(error_file)
-    
-    # when deleting spaces, try to also delete flags:
-    error_transducer.substitute((' ', hfst.EPSILON), get_edit_space_transducer(flag_encoder))
-    
-    # ensure error transducer already contains flag symbols:
+def amend_error_transducer(error_transducer, flag_encoder):
+    '''Amend the error FST, also trying to delete flags when deleting spaces.
+       Furthermore, ensure error transducer already contains flag symbols.'''
+
+    # when deleting spaces, try to also delete flags
+    error_transducer.substitute(
+        (' ', hfst.EPSILON),
+        get_edit_space_transducer(flag_encoder))
+    # ensure that the error transducer contains flags
     alphabet = error_transducer.get_alphabet()
     for flag in flag_encoder.flag_list:
         if flag not in alphabet:
             logging.warning('error transducer did not have flag %s yet', flag)
             error_transducer.insert_to_alphabet(flag)
-    
-    punctuation_transducer = helper.load_transducer(punctuation_file)
-    open_bracket_transducer = helper.load_transducer(open_bracket_file)
-    close_bracket_transducer = helper.load_transducer(close_bracket_file)
-    
-    punctuation_transducer.optionalize()
-    open_bracket_transducer.optionalize()
-    close_bracket_transducer.optionalize()
-    
-    lexicon_transducer = helper.load_transducer(lexicon_file)
-    
+
+
+def amend_lexicon_transducer(lexicon_transducer, morphology_transducer, composition_depth):
+    '''Amend the lexicon FSA for compound words, and for decomposed umlauts.
+       Compose with morphology to extend further, and project to an FSA.'''
+
     # add compounds to lexicon:
     if composition_depth > 1:
         lexicon_transducer = lexicon_add_compounds(lexicon_transducer, composition_depth)
-    
     # add derivation+inflection morphology to lexicon
-    if morphology_file != None:
-        morphology_transducer = helper.load_transducer(morphology_file)
+    if morphology_transducer is not None:
         lexicon_transducer.compose(morphology_transducer)
-    
-    # allow both decomposed (as in lexicon file) and precomposed (modern) umlaut variants:
-    precompose_transducer = hfst.regex('[a\u0364:ä|o\u0364:ö|u\u0364:ü|A\u0364:Ä|O\u0364:Ö|U\u0364:Ü|?]*')
+    # allow both decomposed (as in lexicon file) and precomposed (modern)
+    # umlaut variants:
+    precompose_transducer = hfst.regex(
+        '[a\u0364:ä|o\u0364:ö|u\u0364:ü|A\u0364:Ä|O\u0364:Ö|U\u0364:Ü|?]*')
     lexicon_transducer.compose(precompose_transducer)
-
     # make sure above lexical transductions never enter the result:
     lexicon_transducer.output_project()
 
+
+def single_token_to_window_acceptor(single_token_acceptor, flag_acceptor,
+                                    words_per_window):
     # synchronize with left window boundary:
-    result_lexicon_transducer = flag_acceptor.copy()
-    
-    # combine transducers to single-token lexicon transducer:
-    result_lexicon_transducer.concatenate(open_bracket_transducer) # (optional)
-    result_lexicon_transducer.concatenate(lexicon_transducer) # includes dash and numbers
-    result_lexicon_transducer.concatenate(punctuation_transducer) # (optional)
-    result_lexicon_transducer.concatenate(close_bracket_transducer) # (optional)
-    result_lexicon_transducer.concatenate(space_transducer)
-    
-    # repeat single-token lexicon transducer according to maximum words per window:
-    result_lexicon_transducer.repeat_n_to_k(1, words_per_window)
-    
+    result = flag_acceptor.copy()
+    result.concatenate(single_token_acceptor)
+    # repeat single-token lexicon transducer according to maximum words per
+    # window:
+    result.repeat_n_to_k(1, words_per_window)
     # synchronize with right window boundary:
-    result_lexicon_transducer.concatenate(flag_acceptor)
-
-    return error_transducer, result_lexicon_transducer
-
+    result.concatenate(flag_acceptor)
+    return result
 
 
-def load_transducers_preserve_punctuation(error_file,
-    punctuation_file,
-    lexicon_file,
-    flag_encoder,
-    composition_depth=1,
-    words_per_window=3,
-    morphology_file=None):
-    """
-    Load transducers for the punctuation-preserving model, 
-    including the error FST, lexicon FSA, morphology FST, and
-    punctuation FSA (regardless of left/right context).
-    
-    Amend the error FST, also trying to delete flags when deleting spaces.
-    (This error FST must never change any characters into punctuation
-    characters.)
-    
-    Amend the lexicon FSA for compound words, and for decomposed umlauts.
-    Compose with morphology to extend further, and project to an FSA.
-    
-    Concatenate the lexicon FSAs to a single-token FSA, then repeat for
-    given words_per_window, synchronizing each word with flags.
-    """
-    
-    # load transducers
-    flag_acceptor = get_flag_acceptor(flag_encoder)
-    space_transducer = hfst.regex('% :% ')
-    error_transducer = helper.load_transducer(error_file)
-    
-    # when deleting spaces, try to also delete flags:
-    error_transducer.substitute((' ', hfst.EPSILON), get_edit_space_transducer(flag_encoder))
-    
-    # ensure error transducer already contains flag symbols:
-    alphabet = error_transducer.get_alphabet()
-    for flag in flag_encoder.flag_list:
-        if flag not in alphabet:
-            logging.warning('error transducer did not have flag %s yet', flag)
-            error_transducer.insert_to_alphabet(flag)
-    
-    punctuation_transducer = helper.load_transducer(punctuation_file)
-    #punctuation_transducer.optionalize()
-    #open_bracket_transducer = helper.load_transducer(open_bracket_file)
-    #open_bracket_transducer.optionalize()
-    #close_bracket_transducer = helper.load_transducer(close_bracket_file)
-    #close_bracket_transducer.optionalize()
-    
-    lexicon_transducer = helper.load_transducer(lexicon_file)
-    
-    # add composed words to lexicon
-    if composition_depth > 1:
-        lexicon_transducer = lexicon_add_compounds(lexicon_transducer, composition_depth)
-    
-    # add morphology to lexicon
-    if morphology_file != None:
-        morphology_transducer = helper.load_transducer(morphology_file)
-        lexicon_transducer.compose(morphology_transducer)
-    
-    # allow both decomposed (as in lexicon file) and precomposed (modern) umlaut variants:
-    precompose_transducer = hfst.regex('[a\u0364:ä|o\u0364:ö|u\u0364:ü|A\u0364:Ä|O\u0364:Ö|U\u0364:Ü|?]*')
-    lexicon_transducer.compose(precompose_transducer)
-    
-    # make sure above lexical transductions never enter the result:
-    lexicon_transducer.output_project()
-    
-    # synchronize with left window boundary:
-    result_lexicon_transducer = flag_acceptor.copy()
-    
-    # combine transducers to single-token lexicon transducer:
-    #result_lexicon_transducer.concatenate(open_bracket_transducer)
-    result_lexicon_transducer.concatenate(punctuation_transducer) # both left and right contexts
-    result_lexicon_transducer.concatenate(lexicon_transducer) # includes dash and numbers, has no edits removing punctuation
-    result_lexicon_transducer.concatenate(punctuation_transducer) # both left and right contexts
-    #result_lexicon_transducer.concatenate(close_bracket_transducer)
-    result_lexicon_transducer.concatenate(space_transducer)
-    
-    # repeat single-token lexicon transducer according to maximum words per window:
-    result_lexicon_transducer.repeat_n_to_k(1, words_per_window)
-    
-    # synchronize with right window boundary:
-    result_lexicon_transducer.concatenate(flag_acceptor)
+def build_single_token_acceptor_bracket(
+            lexicon_transducer,
+            punctuation_transducer,
+            open_bracket_transducer,
+            close_bracket_transducer,
+            space_transducer):
 
-    return error_transducer, result_lexicon_transducer
+    punctuation_transducer.optionalize()
+    open_bracket_transducer.optionalize()
+    close_bracket_transducer.optionalize()
+
+    result = hfst.epsilon_fst()
+    result.concatenate(open_bracket_transducer) # (optional)
+    result.concatenate(lexicon_transducer) # includes dash and numbers
+    result.concatenate(punctuation_transducer) # (optional)
+    result.concatenate(close_bracket_transducer) # (optional)
+    result.concatenate(space_transducer)
+    return result
 
 
-def load_transducers_inter_word(error_file,
-    lexicon_file,
-    punctuation_left_file,
-    punctuation_right_file,
-    flag_encoder,
-    words_per_window = 3,
-    composition_depth = 1,
-    morphology_file=None):
-    """
-    Load transducers for the inter-word model, including the error FST,
-    lexicon FSA, morphology FST, and left/right-punctuation FSA.
-    
-    Amend the error FST, also trying to delete flags when deleting spaces.
-    
-    Amend the lexicon FSA for compound words, and for decomposed umlauts.
-    Compose with morphology to extend further, and project to an FSA.
-    
-    Concatenate the lexicon FSAs to a single-token FSA, then repeat for
-    given words_per_window, synchronizing each word with flags.
-    """
+def build_single_token_acceptor_preserve_punctuation(
+            lexicon_transducer,
+            punctuation_transducer,
+            space_transducer):
 
-    # TODO: handle flag diacritics; the construction of the lexicon is not
-    # correct anymore; the punctuation_right_transducer as constructed
-    # contains a space character at the beginning which shouldn't be there,
-    # since the space is placed at the end of each window (with no
-    # punctuation characters after that); since this model should be
-    # changed to a complete punctuation ngram model anyway, the corrections
-    # can be made on that occasion
+    result = hfst.epsilon_fst()
+    result.concatenate(punctuation_transducer) # both left and right contexts
+    result.concatenate(lexicon_transducer) # includes dash and numbers, has no edits removing punctuation
+    result.concatenate(punctuation_transducer) # both left and right contexts
+    result.concatenate(space_transducer)
+    return result
 
-    # load transducers
-    flag_acceptor = get_flag_acceptor(flag_encoder)
-    space_transducer = hfst.regex('% :% ')
-    error_transducer = helper.load_transducer(error_file)
-    
-    # when deleting spaces, try to also delete flags:
-    error_transducer.substitute((' ', hfst.EPSILON), get_edit_space_transducer(flag_encoder))
-    
-    # ensure error transducer already contains flag symbols:
-    alphabet = error_transducer.get_alphabet()
-    for flag in flag_encoder.flag_list:
-        if flag not in alphabet:
-            logging.warning('error transducer did not have flag %s yet', flag)
-            error_transducer.insert_to_alphabet(flag)
-    
-    punctuation_left_transducer = helper.load_transducer(punctuation_left_file)
-    punctuation_right_transducer = helper.load_transducer(punctuation_right_file)
-    
-    # compensate for outdated model (see TODO above):
-    punctuation_right_transducer.compose(hfst.regex('% :0 ?*'))
-    punctuation_right_transducer.output_project()
+
+def build_single_token_acceptor_inter_word(
+            lexicon_transducer,
+            punctuation_left_transducer,
+            punctuation_right_transducer,
+            space_transducer):
 
     punctuation_left_transducer.optionalize()
     punctuation_right_transducer.optionalize()
 
-    lexicon_transducer = helper.load_transducer(lexicon_file)
-    
-    # add compounds to lexicon:
-    if composition_depth > 1:
-        lexicon_transducer = lexicon_add_compounds(lexicon_transducer, composition_depth)
-    
-    # add derivation+inflection morphology to lexicon
-    if morphology_file != None:
-        morphology_transducer = helper.load_transducer(morphology_file)
-        lexicon_transducer.compose(morphology_transducer)
-    
-    # allow both decomposed (as in lexicon file) and precomposed (modern) umlaut variants:
-    precompose_transducer = hfst.regex('[a\u0364:ä|o\u0364:ö|u\u0364:ü|A\u0364:Ä|O\u0364:Ö|U\u0364:Ü|?]*')
-    lexicon_transducer.compose(precompose_transducer)
-    
-    # make sure above lexical transductions never enter the result:
-    lexicon_transducer.output_project()
-    
-    # synchronize with left window boundary:
-    result_lexicon_transducer = flag_acceptor.copy()
-    
-    # combine transducers to single-token lexicon transducer:
+    result = hfst.epsilon_fst()
     result_lexicon_transducer.concatenate(lexicon_transducer)
     result_lexicon_transducer.concatenate(punctuation_left_transducer)
     result_lexicon_transducer.concatenate(space_transducer)
     result_lexicon_transducer.concatenate(punctuation_right_transducer)
-    
-    # repeat single-token lexicon transducer according to maximum words per window:
-    result_lexicon_transducer.repeat_n_minus(words_per_window-1)
-    result_lexicon_transducer.concatenate(flag_acceptor)
-    result_lexicon_transducer.concatenate(lexicon_transducer)
-    result_lexicon_transducer.concatenate(punctuation_left_transducer)
-    result_lexicon_transducer.concatenate(space_transducer)
-    
-    # synchronize with right window boundary:
-    result_lexicon_transducer.concatenate(flag_acceptor)
-    
-    return error_transducer, result_lexicon_transducer
+    return result
+
+
+def build_single_token_acceptor(transducers, punctuation_method):
+
+    def _require_transducers(tr_names):
+        for tr_name in tr_names:
+            assert tr_name in transducers and \
+                   isinstance(transducers[tr_name], hfst.HfstTransducer)
+
+    space_transducer = hfst.regex('% :% ')
+    if punctuation_method == 'bracket':
+        _require_transducers(
+            ['lexicon', 'punctuation', 'open_bracket', 'close_bracket'])
+        return build_single_token_acceptor_bracket(
+            transducers['lexicon'],
+            transducers['punctuation'],
+            transducers['open_bracket'],
+            transducers['close_bracket'],
+            space_transducer)
+    elif punctuation_method == 'preserve':
+        _require_transducers(['lexicon', 'punctuation'])
+        return build_single_token_acceptor_preserve_punctuation(
+            transducers['lexicon'],
+            transducers['punctuation'],
+            space_transducer)
+    elif punctuation_method == 'lm':
+        _require_transducers(
+            ['lexicon', 'punctuation_left', 'punctuation_right'])
+        return build_single_token_acceptor_inter_word(
+            transducers['lexicon'],
+            transducers['punctuation_left'],
+            transducers['punctuation_right'],
+            space_transducer)
+
+
+def build_model(transducers,
+    punctuation_method='bracket',
+    composition_depth=1,
+    words_per_window=3):
+    """
+    Builds a model for the sliding window algorithm:
+    - amends the error transducer: ensures that it accepts flags;
+    - amends the lexicon transducer: adds compounding, morphology and
+      historical umlauts;
+    - converts the lexicon transducer into a transducer accepting windows of 
+      at most `words_per_window` words, with punctuation in between.
+    """
+
+    flag_encoder = transducers['flag_encoder']
+    flag_acceptor = get_flag_acceptor(flag_encoder)
+    amend_error_transducer(transducers['error'], flag_encoder)
+    amend_lexicon_transducer(
+        transducers['lexicon'],
+        transducers['morphology'] if 'morphology' in transducers else None,
+        composition_depth)
+
+    single_token_acceptor = build_single_token_acceptor(
+        transducers, punctuation_method=punctuation_method)
+    window_acceptor = single_token_to_window_acceptor(
+        single_token_acceptor, flag_acceptor, words_per_window)
+
+    return transducers['error'], window_acceptor
 
 
 def complete_merge(basic_fst, flag_encoder):

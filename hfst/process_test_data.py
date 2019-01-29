@@ -19,41 +19,39 @@ composition = None
 args = None
 
 
-def load_transducers(punctuation, composition_depth, words_per_window):
+def load_model(punctuation_method, composition_depth, words_per_window):
     global flag_encoder
 
-    if args.punctuation == 'bracket':
-        ## bracketing rules
-        return sw.load_transducers_bracket(
-            'fst/max_error_3_context_23.hfst', # old error model for Fraktur4
-            'fst/punctuation_transducer_dta.hfst', # small test corpus punctuation
-            'fst/lexicon_transducer_dta.hfst', # small test corpus lexicon
-            'fst/open_bracket_transducer_dta.hfst', # small test corpus opening brackets
-            'fst/close_bracket_transducer_dta.hfst', # small test corpus closing brackets
-            flag_encoder,
-            composition_depth=composition_depth,
-            words_per_window=words_per_window)
-        
-    elif args.punctuation == 'lm':
-        ## inter-word language model
-        return sw.load_transducers_inter_word(
-            'fst/max_error_3_context_23.hfst', # old error model for Fraktur4
-            'fst/lexicon_transducer_dta.hfst', # small test corpus lexicon
-            'fst/left_punctuation.hfst', # old left-of-space/suffix punctuation
-            'fst/right_punctuation.hfst', # old right-of-space/prefix punctuation
-            flag_encoder,
-            composition_depth=composition_depth,
-            words_per_window=words_per_window)
-        
-    elif args.punctuation == 'preserve':
-        ## no punctuation changes
-        return sw.load_transducers_preserve_punctuation(
-            'fst/preserve_punctuation_max_error_3_context_23.hfst', # old error model for Fraktur4
-            'fst/any_punctuation_no_space.hfst', # old preserving punctuation
-            'fst/lexicon_transducer_dta.hfst', # small test corpus lexicon
-            flag_encoder,
-            composition_depth=composition_depth,
-            words_per_window=words_per_window)
+    transducers = {
+        'flag_encoder' : flag_encoder,
+        'lexicon' : helper.load_transducer('fst/lexicon_transducer_dta.hfst')
+    }
+    if punctuation_method == 'bracket':
+        transducers['error'] = helper.load_transducer(
+            'fst/max_error_3_context_23.hfst')
+        transducers['punctuation'] = helper.load_transducer(
+            'fst/punctuation_transducer_dta.hfst')
+        transducers['open_bracket'] = helper.load_transducer(
+            'fst/open_bracket_transducer_dta.hfst')
+        transducers['close_bracket'] = helper.load_transducer(
+            'fst/close_bracket_transducer_dta.hfst')
+    elif punctuation_method == 'lm':
+        transducers['error'] = helper.load_transducer(
+            'fst/max_error_3_context_23.hfst')
+        transducers['punctuation_left'] = helper.load_transducer(
+            'fst/left_punctuation.hfst')
+        transducers['punctuation_right'] = helper.load_transducer(
+            'fst/right_punctuation.hfst')
+    elif punctuation_method == 'preserve':
+        transducers['error'] = helper.load_transducer(
+            'fst/preserve_punctuation_max_error_3_context_23.hfst')
+        transducers['punctuation'] = helper.load_transducer(
+            'fst/any_punctuation_no_space.hfst')
+
+    return sw.build_model(transducers,
+        punctuation_method=punctuation_method,
+        composition_depth=composition_depth,
+        words_per_window=words_per_window)
 
     
 def prepare_composition(lexicon_transducer, error_transducer):
@@ -174,7 +172,7 @@ def main():
     
     # prepare transducers
     flag_encoder = sw.FlagEncoder()
-    error_transducer, lexicon_transducer = load_transducers(
+    error_transducer, lexicon_transducer = load_model(
         args.punctuation, args.composition_depth, args.words_per_window)
     composition = prepare_composition(lexicon_transducer, error_transducer)
             
