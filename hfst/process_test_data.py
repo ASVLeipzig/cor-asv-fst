@@ -12,18 +12,30 @@ import sliding_window as sw
 import helper
 
 # globals (for painless cow-semantic shared memory fork-based multiprocessing)
-lowercase_transducer = None
-lm_transducer = None
-flag_encoder = None
-composition = None
-args = None
+model = {}
+gl_config = {}
+    
+
+def prepare_composition(lexicon_transducer, error_transducer, result_num, rejection_weight):
+    # write lexicon and error transducer files in OpenFST format
+    # (cannot use one file for both with OpenFST::Read)
+    result = None
+    with tempfile.NamedTemporaryFile(prefix='cor-asv-fst-sw-error') as error_f:
+        with tempfile.NamedTemporaryFile(prefix='cor-asv-fst-sw-lexicon') as lexicon_f:
+            sw.write_fst(error_f.name, error_transducer)
+            sw.write_fst(lexicon_f.name, lexicon_transducer)
+            
+            result = pyComposition(
+                error_f.name, lexicon_f.name,
+                result_num, rejection_weight)
+    return result
 
 
-def load_model(punctuation_method, composition_depth, words_per_window):
-    global flag_encoder
+def prepare_model(punctuation_method, **kwargs):
+    result = { 'flag_encoder' : sw.FlagEncoder() }
 
     transducers = {
-        'flag_encoder' : flag_encoder,
+        'flag_encoder' : result['flag_encoder'],
         'lexicon' : helper.load_transducer('fst/lexicon_transducer_dta.hfst')
     }
     if punctuation_method == 'bracket':
@@ -48,43 +60,38 @@ def load_model(punctuation_method, composition_depth, words_per_window):
         transducers['punctuation'] = helper.load_transducer(
             'fst/any_punctuation_no_space.hfst')
 
-    return sw.build_model(transducers,
+    error_tr, lexicon_tr = sw.build_model(transducers,
         punctuation_method=punctuation_method,
-        composition_depth=composition_depth,
-        words_per_window=words_per_window)
+        composition_depth=kwargs['composition_depth'],
+        words_per_window=kwargs['words_per_window'])
+    result['composition'] = prepare_composition(
+        lexicon_tr, error_tr, kwargs['result_num'], kwargs['rejection_weight'])
 
-    
-def prepare_composition(lexicon_transducer, error_transducer):
-    # write lexicon and error transducer files in OpenFST format
-    # (cannot use one file for both with OpenFST::Read)
-    result = None
-    with tempfile.NamedTemporaryFile(prefix='cor-asv-fst-sw-error') as error_f:
-        with tempfile.NamedTemporaryFile(prefix='cor-asv-fst-sw-lexicon') as lexicon_f:
-            sw.write_fst(error_f.name, error_transducer)
-            sw.write_fst(lexicon_f.name, lexicon_transducer)
-            
-            result = pyComposition(
-                error_f.name, lexicon_f.name,
-                args.result_num, args.rejection_weight)
+    if kwargs['apply_lm']:
+        result['lm_transducer'] = helper.load_transducer(
+            'fst/lang_mod_theta_0_000001.mod.modified.hfst')
+        result['lowercase_transducer'] = helper.load_transducer(
+            'fst/lowercase.hfst')
+
     return result
 
 
-# needs to be global for mp:
-def process(basename, input_str):
-    global lowercase_transducer, lm_transducer, flag_encoder, args, composition
+# needs to be global for multiprocessing
+def correct_string(basename, input_str):
+    global model, gl_config
     
     logging.info('input_str:  %s', input_str)
 
     try:
-        complete_outputs = sw.window_size_1_2(input_str, None, None, flag_encoder, args.result_num, composition)
+        complete_outputs = sw.window_size_1_2(input_str, None, None, model['flag_encoder'], gl_config['result_num'], model['composition'])
         
         for i, complete_output in enumerate(complete_outputs):
-            if not args.apply_lm:
+            if not gl_config['apply_lm']:
                 complete_output.n_best(1)
 
-            complete_output = sw.remove_flags(complete_output, flag_encoder)
+            complete_output = sw.remove_flags(complete_output, model['flag_encoder'])
 
-            if args.apply_lm:
+            if gl_config['apply_lm']:
                 complete_output.output_project()
                 # FIXME: should also be composed via OpenFST library (pyComposition)
                 complete_output.compose(lowercase_transducer)
@@ -97,12 +104,12 @@ def process(basename, input_str):
             logging.info('output_str: %s', output_str)
 
             if sw.REJECTION_WEIGHT < 0: # for ROC evaluation: multiple output files
-                suffix = args.output_suffix + "." + "rw_" + str(i)
+                suffix = gl_config['output_suffix'] + "." + "rw_" + str(i)
             else:
-                suffix = args.output_suffix
+                suffix = gl_config['output_suffix']
 
             filename = basename + "." + suffix
-            with open(os.path.join(args.directory, filename), 'w') as f:
+            with open(os.path.join(gl_config['directory'], filename), 'w') as f:
                 f.write(output_str)
     
     except Exception as e:
@@ -110,6 +117,28 @@ def process(basename, input_str):
         raise e
     
     return basename, input_str, output_str
+
+
+def parallel_process(input_pairs, num_processes):
+    with mp.Pool(processes=num_processes) as pool:
+        result = pool.starmap_async(
+            correct_string, input_pairs,
+            error_callback=logging.error)
+        result.wait()
+        if result.successful():
+            return result.get()
+        else:
+            raise RuntimeError('error during parallel processing')
+
+
+def print_results(results, gt_dict):
+    n = len(results)
+    for i, (basename, input_str, output_str) in enumerate(results):
+        print("%03d/%03d: %s" % (i+1, n, basename))
+        print(input_str)
+        print(output_str)
+        print(gt_dict[basename])
+        print()
 
 
 def parse_arguments():
@@ -164,55 +193,38 @@ def main():
     specified in output_suffix.
     """
 
-    global lowercase_transducer, lm_transducer, flag_encoder, args, composition
+    global model, gl_config
     
+    # parse command-line arguments and set up various parameters
     args = parse_arguments()
-
     logging.basicConfig(level=logging.getLevelName(args.log_level))
-    
-    # prepare transducers
-    flag_encoder = sw.FlagEncoder()
-    error_transducer, lexicon_transducer = load_model(
-        args.punctuation, args.composition_depth, args.words_per_window)
-    composition = prepare_composition(lexicon_transducer, error_transducer)
-            
-    if args.apply_lm:
-        lm_file = 'fst/lang_mod_theta_0_000001.mod.modified.hfst'
-        lowercase_file = 'fst/lowercase.hfst'
-        
-        lm_transducer = helper.load_transducer(lm_file)
-        lowercase_transducer = helper.load_transducer(lowercase_file)
-    
+    gl_config = {
+        'result_num' : args.result_num,
+        'apply_lm' : args.apply_lm,
+        'output_suffix' : args.output_suffix,
+        'directory' : args.directory,
+    }
     sw.REJECTION_WEIGHT = args.rejection_weight
+    
+    # load all transducers and build a model out of them
+    model = prepare_model(
+        args.punctuation,
+        apply_lm = args.apply_lm,
+        composition_depth = args.composition_depth,
+        words_per_window = args.words_per_window,
+        rejection_weight = args.rejection_weight,
+        result_num = args.result_num)
 
-    # read and process test data
+    # load test data
     gt_dict = helper.create_dict(args.directory, 'gt.txt')
     ocr_dict = helper.create_dict(args.directory, args.input_suffix)
 
-    def show_error(exception):
-        logging.error(exception)
-    
-    results = []
-    if args.processes > 1:
-        with mp.Pool(processes=args.processes) as pool:
-            params = list(ocr_dict.items()) #[10:20]
-            result = pool.starmap_async(process, params, error_callback=show_error)
-            result.wait()
-            if result.successful():
-                results = result.get()
-            else:
-                logging.error('error during processing')
-                exit(1)
-    else:
-        results = [process(basename, input_str) \
-                   for basename, input_str in ocr_dict.items()]
-    
-    for i, (basename, input_str, output_str) in enumerate(results):
-        print("%03d/%03d: %s" % (i+1, len(ocr_dict), basename))
-        print(input_str)
-        print(output_str)
-        print(gt_dict[basename])
-        print()
+    # process test data and output results
+    results = parallel_process(ocr_dict.items(), args.processes) \
+              if args.processes > 1 \
+              else [process(basename, input_str) \
+                    for basename, input_str in ocr_dict.items()]
+    print_results(results, gt_dict)
 
 
 if __name__ == '__main__':
