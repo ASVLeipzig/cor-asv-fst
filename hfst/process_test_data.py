@@ -79,39 +79,49 @@ def prepare_model(punctuation_method, **kwargs):
 # needs to be global for multiprocessing
 def correct_string(basename, input_str):
     global model, gl_config
+
+    def _apply_lm(output_tr):
+        output_tr.output_project()
+        # FIXME: should also be composed via OpenFST library (pyComposition)
+        output_tr.compose(model['lowercase_transducer'])
+        output_tr.compose(model['lm_transducer'])
+        output_tr.input_project()
+
+    def _save_output_str(output_str, i):
+        if sw.REJECTION_WEIGHT < 0: # for ROC evaluation: multiple output files
+            suffix = gl_config['output_suffix'] + "." + "rw_" + str(i)
+        else:
+            suffix = gl_config['output_suffix']
+
+        filename = basename + "." + suffix
+        with open(os.path.join(gl_config['directory'], filename), 'w') as f:
+            f.write(output_str)
+
+    def _output_tr_to_string(tr):
+        paths = hfst.HfstTransducer(tr).extract_paths(
+            max_number=1, max_cycles=0)
+        return list(paths.items())[0][1][0][0]\
+                    .replace(hfst.EPSILON, '')              # really necessary?
     
-    logging.info('input_str:  %s', input_str)
+    logging.debug('input_str:  %s', input_str)
 
     try:
-        complete_outputs = sw.window_size_1_2(input_str, None, None, model['flag_encoder'], gl_config['result_num'], model['composition'])
+        complete_outputs = sw.window_size_1_2(
+            input_str, None, None, model['flag_encoder'],
+            gl_config['result_num'], model['composition'])
         
         for i, complete_output in enumerate(complete_outputs):
             if not gl_config['apply_lm']:
                 complete_output.n_best(1)
 
-            complete_output = sw.remove_flags(complete_output, model['flag_encoder'])
-
+            complete_output = sw.remove_flags(
+                complete_output, model['flag_encoder'])
             if gl_config['apply_lm']:
-                complete_output.output_project()
-                # FIXME: should also be composed via OpenFST library (pyComposition)
-                complete_output.compose(lowercase_transducer)
-                complete_output.compose(lm_transducer)
-                complete_output.input_project()
+                _apply_lm(complete_output)
+            output_str = _output_tr_to_string(complete_output)
+            _save_output_str(output_str, i)
+            logging.debug('output_str: %s', output_str)
 
-            complete_paths = hfst.HfstTransducer(complete_output).extract_paths(max_number=1, max_cycles=0)
-            output_str = list(complete_paths.items())[0][1][0][0].replace(hfst.EPSILON, '') # really necessary?
-
-            logging.info('output_str: %s', output_str)
-
-            if sw.REJECTION_WEIGHT < 0: # for ROC evaluation: multiple output files
-                suffix = gl_config['output_suffix'] + "." + "rw_" + str(i)
-            else:
-                suffix = gl_config['output_suffix']
-
-            filename = basename + "." + suffix
-            with open(os.path.join(gl_config['directory'], filename), 'w') as f:
-                f.write(output_str)
-    
     except Exception as e:
         logging.exception('exception for window result of "%s"' % input_str)
         raise e
@@ -229,3 +239,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
