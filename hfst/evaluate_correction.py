@@ -14,6 +14,13 @@ import editdistance # fastest (and no memory/stack problems), but no customized 
 
 import helper
 
+
+def print_line(ocr, cor, gt):
+    print('OCR:       ', ocr)
+    print('Corrected: ', cor)
+    print('GT:        ', gt)
+
+
 def get_best_alignment(l1, l2):
     # scoring = SimpleScoring(2, -1)
     # aligner = StrictGlobalSequenceAligner(scoring, -2)
@@ -65,6 +72,7 @@ def get_best_alignment(l1, l2):
         else:
             raise Exception("difflib returned invalid opcode", op, "in", l1, l2)
     return alignment1
+
 
 def get_adjusted_distance(l1, l2):
     """Calculate distance (as the number of edits) of strings l1 and l2 by aligning them.
@@ -124,6 +132,7 @@ def get_adjusted_distance(l1, l2):
 
     #length_reduction = max(l1.count(u"\u0364"), l2.count(u"\u0364"))
     return d, len(l2) # d, len(a) - length_reduction # distance and adjusted length
+
 
 def get_precision_recall(ocr, cor, gt):
     """Calculate number of true/false positive/negative edits of given OCR vs GT and COR vs GT line by aligning them.
@@ -217,7 +226,85 @@ def get_precision_recall(ocr, cor, gt):
                 # what if ocr_sym != cor_sym ?
     assert i == len(alignment_ocr)
     assert j == len(alignment_cor)
+
     return (TP, TN, FP, FN)
+
+
+def compute_total_precision_recall(line_triplets, silent=False):
+    TP, TN, FP, FN = 0, 0, 0, 0
+    for ocr, cor, gt in line_triplets:
+        l_TP, l_TN, l_FP, l_FN = get_precision_recall(ocr, cor, gt)
+        TP += l_TP
+        TN += l_TN
+        FP += l_FP
+        FN += l_FN
+        if not silent:
+            print_line(ocr, cor, gt)
+            print('precision: %.3f / recall %.3f' %
+                  (1 if l_TP+l_FP == 0 else l_TP / (l_TP+l_FP),
+                   1 if l_TP+l_FN == 0 else l_TP / (l_TP+l_FN)))
+    return TP, TN, FP, FN
+
+
+# FIXME: convert to NFC (canonical composition normal form) before
+#        perhaps even NFKC (canonical composition compatibility normal form),
+#                but GT guidelines require keeping "ſ"
+def compute_total_edits_levenshtein(line_triplets, silent=False):
+    edits_ocr, len_ocr, edits_cor, len_cor = 0, 0, 0, 0
+    for ocr, cor, gt in line_triplets:
+        edits_ocr_line, len_ocr_line = editdistance.eval(ocr, gt), len(gt)
+        edits_cor_line, len_cor_line = editdistance.eval(cor, gt), len(gt)
+        edits_ocr += edits_ocr_line
+        len_ocr   += len_ocr_line
+        edits_cor += edits_cor_line
+        len_cor   += len_cor_line
+        if not silent:
+            print_line(ocr, cor, gt)
+            print('CER OCR:       ', edits_ocr_line / len_ocr_line)
+            print('CER Corrected: ', edits_cor_line / len_cor_line)
+    return edits_ocr, len_ocr, edits_cor, len_cor
+
+
+def compute_total_edits_combining_e_umlauts(line_triplets, silent=False):
+    edits_ocr, len_ocr, edits_cor, len_cor = 0, 0, 0, 0
+    for ocr, cor, gt in line_triplets:
+        edits_ocr_line, len_ocr_line = get_adjusted_distance(ocr, gt)
+        edits_cor_line, len_cor_line = get_adjusted_distance(cor, gt)
+        edits_ocr += edits_ocr_line
+        len_ocr   += len_ocr_line
+        edits_cor += edits_cor_line
+        len_cor   += len_cor_line
+        if not silent:
+            print_line(ocr, cor, gt)
+            print('CER OCR:       ', edits_ocr_line / len_ocr_line)
+            print('CER Corrected: ', edits_cor_line / len_cor_line)
+    return edits_ocr, len_ocr, edits_cor, len_cor
+
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(
+        description='OCR post-correction batch evaluation ocrd-cor-asv-fst')
+    parser.add_argument(
+        'directory', metavar='PATH',
+        help='directory for GT, input, and output files')
+    parser.add_argument(
+        '-I', '--input-suffix', metavar='SUF', type=str, default='txt',
+        help='input (OCR) filenames suffix')
+    parser.add_argument(
+        '-O', '--output-suffix', metavar='SUF', type=str,
+        default='cor-asv-fst.txt', help='output (corrected) filenames suffix')
+    parser.add_argument(
+        '-G', '--gt-suffix', metavar='SUF', type=str,
+        default='gt.txt', help='ground truth filenames suffix')
+    parser.add_argument(
+        '-M', '--metric', metavar='TYPE', type=str,
+        choices=['Levenshtein', 'combining-e-umlauts', 'precision-recall'],
+        default='combining-e-umlauts', help='distance metric to apply')
+    parser.add_argument(
+        '-S', '--silent', action='store_true', default=False,
+        help='do not show data, only aggregate')
+    return parser.parse_args()
+
 
 def main():
     """
@@ -226,111 +313,53 @@ def main():
     where each file contains one line of text, 
     for measuring and comparing the character error rate (CER).
     
-    For GT files, the suffix is fixed as 'gt.txt'.
+    For GT files, the suffix is given in <gt_suffix>.
     For OCR files, the suffix is given in <input_suffix>.
     For corrected files, the suffix is given in <output_suffix>.
     
     Align corresponding lines (with same ID) from GT, OCR, and correction,
     and measure their edit distance and CER.
     """
+
+    args = parse_arguments()
     
-    parser = argparse.ArgumentParser(description='OCR post-correction batch evaluation ocrd-cor-asv-fst')
-    parser.add_argument('directory', metavar='PATH', help='directory for GT, input, and output files')
-    parser.add_argument('-I', '--input-suffix', metavar='SUF', type=str, default='txt', help='input (OCR) filenames suffix')
-    parser.add_argument('-O', '--output-suffix', metavar='SUF', type=str, default='cor-asv-fst.txt', help='output (corrected) filenames suffix')
-    parser.add_argument('-M', '--metric', metavar='TYPE', type=str, choices=['Levenshtein', 'combining-e-umlauts', 'precision-recall'], default='combining-e-umlauts', help='distance metric to apply')
-    parser.add_argument('-S', '--silent', action='store_true', default=False, help='do not show data, only aggregate')
-    args = parser.parse_args()
-    
-    #l1 = '########Mit unendlich ſuͤßem Sehnen########'
-    #l2 = '########Mit unendlich ſüßem Sehnen########'
-    #print(align_lines(l1, l2))
-    #print(get_adjusted_distance(l1, l2))
-    #print(get_adjusted_percent_identity(l1, l2))
-    
-    # read testdata
-    #path = '../../../daten/dta19-reduced/testdata/'
-    #ocr_suffix = 'Fraktur4'
-    #corrected_suffix = ocr_suffix + '_preserve_2_no_space'
-    
+    # read the test data
     ocr_dict = helper.create_dict(args.directory, args.input_suffix)
-    gt_dict = helper.create_dict(args.directory, 'gt.txt')
     cor_dict = helper.create_dict(args.directory, args.output_suffix)
+    gt_dict = helper.create_dict(args.directory, args.gt_suffix)
+    line_triplets = \
+        ((ocr_dict[key].strip(), cor_dict[key].strip(), gt_dict[key].strip()) \
+         for key in gt_dict)
 
     if args.metric == 'precision-recall':
-        TP = 0
-        TN = 0
-        FP = 0
-        FN = 0
-    else:
-        edits_ocr, edits_cor = 0, 0
-        len_ocr, len_cor = 0,0
-    
-    for key in cor_dict.keys():
-        
-        # padding characters at each side to ensure alignment
-        #gt_line = '########' + gt_dict[key].strip() + '########'
-        #ocr_line = '########' + ocr_dict[key].strip() + '########'
-        #cor_line = '########' +  cor_dict[key].strip() + '########'
-        gt_line = gt_dict[key].strip()
-        ocr_line = ocr_dict[key].strip()
-        cor_line = cor_dict[key].strip()
-
-        if not args.silent:
-            print('OCR:       ', ocr_line)
-            print('Corrected: ', cor_line)
-            print('GT:        ', gt_line)
-        
-        # get character error rate of OCR and corrected text
-        # FIXME: convert to NFC (canonical composition normal form) before
-        #        perhaps even NFKC (canonical composition compatibility normal form),
-        #                but GT guidelines require keeping "ſ"
-        if args.metric == 'Levenshtein': # much faster
-            edits_ocr_line, len_ocr_line = editdistance.eval(ocr_line, gt_line), len(gt_line)
-            edits_cor_line, len_cor_line = editdistance.eval(cor_line, gt_line), len(gt_line)
-        elif args.metric == 'combining-e-umlauts':
-            edits_ocr_line, len_ocr_line = get_adjusted_distance(ocr_line, gt_line)
-            edits_cor_line, len_cor_line = get_adjusted_distance(cor_line, gt_line)
-        elif args.metric == 'precision-recall':
-            TP_line, TN_line, FP_line, FN_line = get_precision_recall(ocr_line, cor_line, gt_line)
-        else:
-            raise Exception("evaluation metric '%s' not implemented" % args.metric)
-
-        if args.metric == 'precision-recall':
-            if not args.silent:
-                print('precision: %.3f / recall %.3f' %
-                      (1 if TP_line+FP_line==0 else TP_line/(TP_line+FP_line),
-                       1 if TP_line+FN_line==0 else TP_line/(TP_line+FN_line)))
-            
-            TP += TP_line
-            TN += TN_line
-            FP += FP_line
-            FN += FN_line
-        else:
-            if not args.silent:
-                print('CER OCR:       ', edits_ocr_line / len_ocr_line)
-                print('CER Corrected: ', edits_cor_line / len_cor_line)
-            
-            edits_ocr += edits_ocr_line
-            edits_cor += edits_cor_line
-            len_ocr += len_ocr_line
-            len_cor += len_cor_line
-    
-    if args.metric == 'precision-recall':
+        TP, TN, FP, FN = compute_total_precision_recall(
+            line_triplets, silent=args.silent)
         precision = 1 if TP+FP==0 else TP/(TP+FP)
         recall = 1 if TP+FN==0 else TP/(TP+FN)
         f1 = 2*TP/(2*TP+FP+FN)
-        tpr = recall # "sensitivity"
-        fpr = 0 if FP+TN==0 else FP/(FP+TN) # "overcorrection rate"
+        tpr = recall                                # "sensitivity"
+        fpr = 0 if FP+TN==0 else FP/(FP+TN)         # "overcorrection rate"
         auc = 0.5*tpr*fpr+tpr*(1-fpr)+0.5*(1-tpr)*(1-fpr)
         print('Aggregate precision: %.3f / recall: %.3f / F1: %.3f' %
               (precision, recall, f1))
-        print('Aggregate true-positive-rate: %.3f / false-positive-rate: %.3f / AUC: %.3f' %
+        print('Aggregate true-positive-rate: %.3f '
+              '/ false-positive-rate: %.3f / AUC: %.3f' %
               (tpr, fpr, auc))
-               
-    else:
+
+    elif args.metric == 'Levenshtein':
+        edits_ocr, len_ocr, edits_cor, len_cor = \
+            compute_total_edits_levenshtein(line_triplets, silent=args.silent)
         print('Aggregate CER OCR:       ', edits_ocr / len_ocr)
         print('Aggregate CER Corrected: ', edits_cor / len_cor)
 
+    elif args.metric == 'combining-e-umlauts':
+        edits_ocr, len_ocr, edits_cor, len_cor = \
+            compute_total_edits_combining_e_umlauts(
+                line_triplets, silent=args.silent)
+        print('Aggregate CER OCR:       ', edits_ocr / len_ocr)
+        print('Aggregate CER Corrected: ', edits_cor / len_cor)
+
+
 if __name__ == '__main__':
     main()
+
