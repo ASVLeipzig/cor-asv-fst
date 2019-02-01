@@ -232,7 +232,7 @@ def main():
     # process test data and output results
     results = parallel_process(ocr_dict.items(), args.processes) \
               if args.processes > 1 \
-              else [process(basename, input_str) \
+              else [correct_string(basename, input_str) \
                     for basename, input_str in ocr_dict.items()]
     print_results(results, gt_dict)
 
