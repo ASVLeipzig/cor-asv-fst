@@ -1,8 +1,14 @@
+"""
+Create error correcting string transducers trained 
+from paired OCR / ground truth text data.
+"""
+from io import open
+import os
 import argparse
-import hfst
 import math
-import functools
+import csv
 
+import hfst
 from nltk import ngrams
 
 # from alignment.sequence import Sequence
@@ -12,8 +18,9 @@ from nltk import ngrams
 # from alignment.vocabulary import Vocabulary
 # from alignment.sequencealigner import SimpleScoring, StrictGlobalSequenceAligner
 import difflib
-# gap/epsilon needs to be a character so we can easily make a transducer from it, but must not ever occur in input
-GAP_ELEMENT =  ' ' # nbsp # '\0' # nul breaks things in libhfst
+# gap/epsilon needs to be a character so we can easily make a transducer from it,
+#             but it must not ever occur in input
+GAP_ELEMENT = u' ' # (nbsp) # '\0' # (nul breaks things in libhfst)
 
 import helper
 from sliding_window import FlagEncoder
@@ -119,7 +126,7 @@ def get_confusion_dicts(gt_dict, raw_dict, max_n):
                 raw_aligned = ''.join(map(lambda x: x[0], alignment))
                 gt_aligned = ''.join(map(lambda x: x[1], alignment))
                 
-                for n in range(1,max_n+1): # the ngrams which are considered
+                for n in range(1, max_n+1): # the ngrams which are considered
                     
                     raw_ngrams = ngrams(raw_aligned, n)
                     gt_ngrams = ngrams(gt_aligned, n)
@@ -135,7 +142,7 @@ def get_confusion_dicts(gt_dict, raw_dict, max_n):
     #for i in [1, 2, 3]:
     #    print(confusion_dicts[i].items())
     
-    return(confusion_dicts)
+    return confusion_dicts
 
 
 def preprocess_confusion_dict(confusion_dict):
@@ -193,7 +200,7 @@ def preprocess_confusion_dict(confusion_dict):
 def write_frequency_list(frequency_list, filename):
     """Write human-readable (as string) frequency_list to filename (tab-separated)."""
 
-    with open(filename, 'w') as f:
+    with open(filename, mode='w', encoding='utf-8') as f:
         for raw_gram, gt_gram, freq in frequency_list:
             f.write(raw_gram.replace(GAP_ELEMENT, u'□') + u'\t' +
                     gt_gram.replace(GAP_ELEMENT, u'□') + u'\t' +
@@ -205,7 +212,7 @@ def read_frequency_list(filename):
     """Read frequency_list from filename."""
 
     freq_list = []
-    with open(filename, 'r') as f:
+    with open(filename, mode='r', encoding='utf-8') as f:
         for line in f:
             instr, outstr, freq = line.strip('\n').split('\t')
             freq_list.append((instr.replace(u'□', GAP_ELEMENT),
@@ -314,11 +321,11 @@ def is_punctuation_edit(raw_char, gt_char):
         return False
 
     # edit to an alphanumeric character
-    if gt_char == "ͤ" or gt_char != GAP_ELEMENT and gt_char.isalnum():
+    if gt_char == "\u0364" or gt_char != GAP_ELEMENT and gt_char.isalnum():
         return False
 
     # alphanumeric to epsilon or space
-    if gt_char in [GAP_ELEMENT, " "] and (raw_char == "ͤ" or raw_char != GAP_ELEMENT and raw_char.isalnum()):
+    if gt_char in [GAP_ELEMENT, " "] and (raw_char == "\u0364" or raw_char != GAP_ELEMENT and raw_char.isalnum()):
         return False
 
     # all other edits modify output punctuation
@@ -332,65 +339,146 @@ def no_punctuation_edits(confusion):
     would convert some character into punctuation.
     """
     
-    for in_char, out_char in zip(confusion[0],confusion[1]):
+    for in_char, out_char in zip(confusion[0], confusion[1]):
         if is_punctuation_edit(in_char, out_char):
             return False
     return True
 
+
+def compile_single_error_transducer(confusion_dict, preserve_punct=False):
+    confusion_list = preprocess_confusion_dict(confusion_dict)
+    if preserve_punct:
+        confusion_list = list(filter(no_punctuation_edits, confusion_list))
+    # create (non-complete) error_transducer and optimize it
+    tr = transducer_from_list(confusion_list)
+    optimize_error_transducer(tr)
+    return tr
+
+
+def combine_error_transducers(transducers, max_context, max_errors):
+    contexts = []
+    for n in range(1,max_context+1):
+        for m in range(1,n+1):
+            contexts.append(list(range(m,n+1)))
+    
+    # FIXME: make proper back-off transducer
+    
+    acceptor = hfst.regex('?*')
+    combined_transducers_dicts = []
+    for context in contexts:
+        print('Context: ', context)
+        one_error = hfst.empty_fst()
+        for n in context:
+            one_error.disjunct(transducers[n-1])
+        
+        # TODO: find out why both minimize and minimize+remove_epsilons makes
+        #       FSTs extremely huge and slow at runtime
+        # TODO: find out why incremental concat+disjoin with previous ET
+        #       (starting with all-acceptor) is larger and slower
+        for num_errors in range(1, max_errors+1):
+            print('Number of errors:', num_errors)
+            result_tr = acceptor.copy()
+            result_tr.concatenate(one_error)
+            result_tr.repeat_n_minus(num_errors)
+            result_tr.concatenate(acceptor)
+            combined_transducers_dicts.append({
+                'max_error' : num_errors,
+                'context' : ''.join(map(str, context)),
+                'transducer' : result_tr })
+    return combined_transducers_dicts
+
+
+def load_input_from_csv(filename):
+    'Load training data from a CSV file.'
+    if os.access(filename, os.R_OK):
+        with open(filename, mode='r', encoding='utf-8') as fp:
+            reader = csv.reader(
+                fp, delimiter = '\t', quotechar = None, escapechar = None,
+                doublequote = False, skipinitialspace = False,
+                lineterminator = '\n', quoting = csv.QUOTE_NONE)
+            ocr_dict, gt_dict = {}, {}
+            for i, (ocr_str, gt_str) in enumerate(reader):
+                ocr_dict[i] = ocr_str
+                gt_dict[i] = gt_str
+        return ocr_dict, gt_dict
+    else:
+        raise argparse.ArgumentTypeError(
+            'not allowed to read file %s' % filename)
+
+
+def load_input_from_dir(directory, input_suffix, gt_suffix):
+    'Load training data from a directory.'
+    if os.path.isdir(directory) and os.access(directory, os.R_OK|os.X_OK):
+        ocr_dict = helper.create_dict(directory, input_suffix)
+        gt_dict = helper.create_dict(directory, gt_suffix)
+        return ocr_dict, gt_dict
+    else:
+        raise argparse.ArgumentTypeError(
+            'unable to read directory %s' % directory)
+
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(
+        description='OCR post-correction ocrd-cor-asv-fst error model creator')
+    parser.add_argument(
+        'directory', metavar='PATH',
+        help='directory (or CSV file) for input and GT files')
+    parser.add_argument(
+        '-I', '--input-suffix', metavar='SUF', type=str, default='txt',
+        help='input (OCR) filenames suffix')
+    parser.add_argument(
+        '-G', '--gt-suffix', metavar='SUF', type=str, default='gt.txt',
+        help='clean (Ground Truth) filenames suffix')
+    parser.add_argument(
+        '-C', '--max-context', metavar='NUM', type=int, default=3,
+        help='maximum size of context count edits at')
+    parser.add_argument(
+        '-E', '--max-errors', metavar='NUM', type=int, default=3,
+        help='maximum number of errors the resulting FST can correct '
+             '(applicable within one window, i.e. a certain number of words)')
+    parser.add_argument(
+        '-P', '--preserve-punctuation', action='store_true', default=False,
+        help='ignore edits to/from non-alphanumeric or non-space characters')
+    return parser.parse_args()
+
+
 def main():
     """
-    Read GT and OCR files following the path scheme <directory>/<ID>.<suffix>
-    and <directory>/<ID>.gt.txt, where each file contains one line of text.
-    Align GT and OCR lines for same IDs, count n-gram pair occurrences of n={1,2,3}
-    for differing lines.
+    Read GT and OCR files following the path scheme
+    <directory>/<ID>.<input_suffix> and <directory>/<ID>.<gt_suffix>, where
+    each file contains one line of text. Align GT and OCR lines for same IDs,
+    count n-gram pair occurrences of n={1,2,3} for differing lines.
     Write confusions frequencies to confusion_<n>.txt, 
     and create a simple error_transducer_<n>.hfst.
     """
 
-    parser = argparse.ArgumentParser(description='OCR post-correction ocrd-cor-asv-fst error model creator')
-    parser.add_argument('directory', metavar='PATH', help='directory for input and GT files')
-    parser.add_argument('-I', '--input-suffix', metavar='SUF', type=str, default='txt', help='input (OCR) filenames suffix')
-    parser.add_argument('-C', '--max-context', metavar='NUM', type=int, default=3, help='maximum size of context count edits at')
-    parser.add_argument('-P', '--preserve-punctuation', action='store_true', default=False, help='ignore edits to/from non-alphanumeric or non-space characters')
-    args = parser.parse_args()
-    
-    # read GT data and OCR data (from dta19_reduced)
-    #path = '../dta19-reduced/traindata/'
-    gt_dict = helper.create_dict(args.directory + "/", 'gt.txt')
-
-    #frak3_dict = create_dict(path, 'deu-frak3')
-    #fraktur4_dict = helper.create_dict(path, 'Fraktur4')
-    #foo4_dict = create_dict(path, 'foo4')
-    ocr_dict = helper.create_dict(args.directory + "/", args.input_suffix)
+    args = parse_arguments()
+    ocr_dict, gt_dict = \
+        load_input_from_csv(args.directory) \
+        if os.path.isfile(args.directory) \
+        else load_input_from_dir(args.directory, args.input_suffix,
+                                 args.gt_suffix)
 
     # get list of confusion dicts with different context sizes
     confusion_dicts = get_confusion_dicts(gt_dict, ocr_dict, args.max_context)
 
-    #n = 3
-    #preserve_punctuation = False
+    single_error_transducers = \
+        [compile_single_error_transducer(
+            confusion_dicts[i],
+            preserve_punct=args.preserve_punctuation) \
+         for i in range(1, args.max_context+1)]
 
-    for n in range(1,args.max_context+1): # considered ngrams
+    combined_tr_dicts = combine_error_transducers(
+        single_error_transducers,
+        args.max_context,
+        args.max_errors)
 
-        print('n: ', str(n))
+    # save the combined transducers to files
+    for tr_dict in combined_tr_dicts:
+        filename = \
+            'max_error_{max_error}_context_{context}.hfst'.format(**tr_dict)
+        tr_dict['transducer'].write_to_file(filename)
 
-        # convert to relative frequencies
-        confusion_list = preprocess_confusion_dict(confusion_dicts[n])
-
-        # write confusion to confusion_<n>.txt
-        write_frequency_list(confusion_list, 'confusion_' + str(n) + '.txt')
-        print('length of confusion list for context size n:', len(confusion_list))
-
-        if args.preserve_punctuation:
-            confusion_list = list(filter(no_punctuation_edits,confusion_list))
-
-        print('length of confusion list after filtering:', len(confusion_list))
-
-        # create (non-complete) error_transducer and optimize it
-        error_transducer = transducer_from_list(confusion_list)
-        optimize_error_transducer(error_transducer)
-
-        # write transducer to file
-        error_transducer.write_to_file('error_transducer_' + str(n) + '.hfst')
 
 if __name__ == '__main__':
     main()

@@ -3,7 +3,11 @@ import hfst
 import time
 import math
 import string
+import unicodedata # for canonical normal form, for combining characters
+from functools import reduce
+import os
 import sys
+import traceback
 import tempfile
 import argparse
 import logging
@@ -37,15 +41,21 @@ def prepare_input(input_str, window_size, flag_encoder, as_transducer=False):
     so windows can be recombined afterwards.
     """
 
-    windows = input_str.split(' ')
+    # remove surrounding whitespace, then normalize to canonical form
+    # (i.e. use pre-composed characters where available)
+    windows = unicodedata.normalize('NFC', input_str.strip()).split(' ')
 
     # combine neighbouring "words", when one of the "words" is merely
     # a single punctuation character
+    # TODO: ensure tokenization is consistent with create_lexicon (spacy + our rules)
 
+    # TODO: if input is already an acceptor (i.e. hypotheses graph), we must still
+    #       be able to do sliding window
+    
     new_windows = []
     last_word = ''
     for word in windows:
-        if len(word) == 1 and not word.isalnum():
+        if len(word) == 1 and not word.isalnum() and not word in '—':
             if last_word != '':
                 last_word = last_word + ' ' + word
             else:
@@ -64,7 +74,20 @@ def prepare_input(input_str, window_size, flag_encoder, as_transducer=False):
         window_str = windows[i:i + window_size]
         window = [flag_encoder.encode(i)]
         for j, word in enumerate(window_str):
-            window.extend(word) # character by character
+            # window.extend(word) # character by character
+            # this breaks with combining characters like U+0364,
+            # which Python treats like separate characters, and
+            # unicodedata's NFC (canonical normal form) cannot
+            # normalize.
+            # so instead, we must fit those explicitly:
+            for k, c in enumerate(word):
+                if unicodedata.combining(c):
+                    if k > 0:
+                        window[-1] = window[-1]+c
+                    else:
+                        pass # or issue warning that a combining character was placed after a space?
+                else:
+                    window.append(c)
             window.append(' ')
             window.append(flag_encoder.encode(i+j+1))
         if as_transducer:
@@ -125,14 +148,37 @@ def compose_and_search(input, error_transducer, lexicon_transducer, result_num, 
             filename = composition.correct_string('\n'.join(input)) # StringCompiler for SYMBOL splits at newline (fst_field_separator)
         else: # isinstance(input, hfst.HfstTransducer)
             #filename = composition.correct_transducer_string(input_transducer...) # not implemented yet
-            with tempfile.NamedTemporaryFile() as f:
+            with tempfile.NamedTemporaryFile(prefix='cor-asv-fst-sw-input') as f:
                 #helper.save_transducer(f.name, input_transducer)
                 write_fst(f.name, input)
                 filename = composition.correct_transducer_file(f.name)
+
         result_fst = helper.load_transducer(filename)
+        os.unlink(filename)
+
+        global REJECTION_WEIGHT
+        if REJECTION_WEIGHT < 0: # for ROC evaluation: no backoff_result in pyComposition
+            result_fst.determinize() # fingers crossed!
+            result_fst.remove_epsilons()
+            #result_fst.minimize()
+
+            results_fst = []
+            for weight in [0., 0.01, 0.1, 0.2, 0.3, 0.7, 1., 1.3, 1.5, 1.7, 2., 3., 5., 10., 20.]:
+                REJECTION_WEIGHT = weight
+                one_result_fst = result_fst.copy()
+                # disjunct result with input_fst, but with high transition weights (acts as a rejection threshold):
+                one_result_fst.disjunct(set_transition_weights(input_transducer))
+                one_result_fst.remove_epsilons()
+                results_fst.append(one_result_fst)
+            REJECTION_WEIGHT = -1
+            result_fst = results_fst
+        else:
+            result_fst = [result_fst]
 
     else: # compose using HFST
         
+        if isinstance(input, list):
+            input_transducer = create_input_transducer(input)
         result_fst = input_transducer.copy()
 
         #logging.info("input_str: %s ", input_str)
@@ -167,11 +213,14 @@ def compose_and_search(input, error_transducer, lexicon_transducer, result_num, 
         result_fst.disjunct(set_transition_weights(input_transducer))
         result_fst.remove_epsilons()
 
+        result_fst = [result_fst]
+
     return result_fst
 
 
 def set_transition_weights(fst):
     """Sets each transition of the given fst to REJECTION_WEIGHT."""
+    global REJECTION_WEIGHT
 
     basic_fst = hfst.HfstBasicTransducer(fst)
     for state in basic_fst.states():
@@ -257,66 +306,79 @@ def get_flag_states(transducer, starting_state, flag_list):
 
 
 def merge_states(basic_transducer, state_list, predecessor_dict):
-    """
+    '''
     Merge all states in the given state_list to a single state, 
     the first in the list. All incoming and outgoing transitions
     of the other states are redirected over this state.
     Forbid epsilon self-loops.
-    """
+    '''
 
-    #print('merging following states:', state_list)
+    def _incoming_transitions(state):
+        '''Return a list of pairs `(predecessor, transition)` of incoming
+           transitions for `state`.'''
+        result = []
+        for pred in predecessor_dict[state]:
+            for t in basic_transducer.transitions(pred):
+                if t.get_target_state() == state:
+                    result.append((pred, t))
+        return result
+
+    def _try_adding_transition(state, transition):
+        if transition.get_target_state() == state \
+                and transition.get_input_symbol() != hfst.EPSILON \
+                and transition.get_output_symbol() != hfst.EPSILON:
+            logging.warn('merge would add loop at %d (%s:%s::%f)',
+                         state, transition.get_input_symbol(),
+                         transition.get_output_symbol(),
+                         transition.get_weight())
+        else:
+            logging.debug('adding transition {} -> {}'\
+                          .format(state, str(transition)))
+            basic_transducer.add_transition(state, transition)
+
+    def _remove_transition(state, transition):
+        logging.debug('removing transition {} -> {}'\
+                      .format(state, str(transition)))
+        basic_transducer.remove_transition(state, transition)
 
     single_state = state_list[0]
-
-    #print('single state', single_state)
-
-    target_states = []
     for state in state_list[1:]:
-
-        #print('from state', state)
         if state == single_state:
-            raise Exception('cannot merge state %d with itself' % state, basic_transducer)
+            raise Exception('cannot merge state %d with itself' % state,
+                            basic_transducer)
+        # TODO: also remove dangling states (i.e. those from which the new
+        # final states cannot be reached anymore)
 
-        # TODO: also remove dangling states (i.e. those from which the new final states cannot be reached anymore)
+        transitions_to_remove, transitions_to_add = [], []
 
         # incoming transitions
-        predecessors = predecessor_dict[state]
-        for pred in predecessors:
-            #print('pred', pred)
-            for transition in basic_transducer.transitions(pred):
-                if transition.get_target_state() == state:
-                    #print(transition.get_target_state(), state)
-                    input_symbol = transition.get_input_symbol()
-                    output_symbol = transition.get_output_symbol()
-                    if pred != single_state:
-                        basic_transducer.add_transition(pred, single_state,
-                                                        input_symbol, output_symbol,
-                                                        transition.get_weight())
-                        if pred not in predecessor_dict[single_state]:
-                            predecessor_dict[single_state] += [pred]
-                    elif input_symbol != hfst.EPSILON and output_symbol != hfst.EPSILON:
-                        logging.warn('merge would add loop at %d (%s:%s::%f)', pred,
-                                    input_symbol, output_symbol, transition.get_weight())
-                    basic_transducer.remove_transition(pred, transition)
-        predecessor_dict[state] = []
-        
+        for (p, t) in _incoming_transitions(state):
+            transitions_to_remove.append((p, t))
+            transitions_to_add.append((
+                p,
+                hfst.HfstBasicTransition(
+                    single_state, t.get_input_symbol(),
+                    t.get_output_symbol(), t.get_weight())))
+
         # outgoing transitions
-        for transition in basic_transducer.transitions(state):
-            succ = transition.get_target_state()
-            input_symbol = transition.get_input_symbol()
-            output_symbol = transition.get_output_symbol()
-            if succ != single_state:
-                basic_transducer.add_transition(single_state, succ,
-                                                input_symbol, output_symbol,
-                                                transition.get_weight())
-                if single_state not in predecessor_dict[succ]:
-                    predecessor_dict[succ] += [single_state]
-                basic_transducer.remove_transition(state, transition)
-                predecessor_dict[succ] = [x for x in predecessor_dict[succ] if not state]
-            elif input_symbol != hfst.EPSILON and output_symbol != hfst.EPSILON:
-                logging.warn('merge would add loop at %d (%s:%s::%f)', succ,
-                            input_symbol, output_symbol, transition.get_weight())
-    
+        for t in basic_transducer.transitions(state):
+            transitions_to_remove.append((state, t))
+            transitions_to_add.append((
+                single_state,
+                hfst.HfstBasicTransition(
+                    t.get_target_state(), t.get_input_symbol(),
+                    t.get_output_symbol(), t.get_weight())))
+
+        for (s, t) in transitions_to_remove:
+            _remove_transition(s, t)
+        for (s, t) in transitions_to_add:
+            _try_adding_transition(s, t)
+        predecessor_dict[state] = []
+
+    # FIXME this is an unexpected side-effect
+    # update flag_state_dict:
+    for state in state_list[1:]:
+        state_list.remove(state)
 
 def write_fst(filename, fst):
     """Write fst to file."""
@@ -330,6 +392,12 @@ def write_fst(filename, fst):
 
     return
 
+def next_flag_state(flag_state_dict, start, flag_encoder):
+    for i in range(start, flag_encoder.max_input_int):
+        flag = flag_encoder.encode(i+1)
+        if flag in flag_state_dict:
+            return flag_state_dict[flag]
+    raise Exception('cannot get next flag states for window merge\n' + traceback.format_exc())
 
 def combine_results(result_list, window_size, flag_encoder):
     """Combine windows' results into one result transducer.
@@ -364,10 +432,8 @@ def combine_results(result_list, window_size, flag_encoder):
     #print('final states', final_states)
 
     # merge states in initial transducer
-    merge_list = flag_state_dict[flag_encoder.encode(1)]
+    merge_list = next_flag_state(flag_state_dict, 0, flag_encoder)
     merge_states(result_fst, merge_list, predecessor_dict)
-    # update flag_state_dict
-    flag_state_dict[flag_encoder.encode(1)] = [merge_list[0]]
 
     #print('PARTIAL RESULT PATHS')
     #print_output_paths(starting_fst)
@@ -387,8 +453,7 @@ def combine_results(result_list, window_size, flag_encoder):
             result_fst.remove_final_weight(state)
 
         # determine append states and set them final
-        append_flag = flag_encoder.encode(i+1)
-        append_states = flag_state_dict[append_flag]
+        append_states = next_flag_state(flag_state_dict, i, flag_encoder)
         for state in append_states:
             result_fst.set_final_weight(state, 0.0)
 
@@ -396,14 +461,14 @@ def combine_results(result_list, window_size, flag_encoder):
 
         #logging.debug('BEFORE CONCATENATION RESULT PATHS')
         #print_output_paths(result_fst)
-        #write_fst('output/before_concatenation.hfst', result_fst)
+        #write_fst('output/before_concatenation.hfst', hfst.HfstTransducer(result_fst))
 
         # concatenate result fst and partial result
         result_fst = hfst.HfstTransducer(result_fst)
         partial_fst = hfst.HfstTransducer(partial_fst)
 
         result_fst.concatenate(partial_fst)
-        #write_fst('output/partial_result.hfst', fst)
+        #write_fst('output/partial_result.hfst', hfst.HfstTransducer(result_fst))
 
         ##print("number of states :", result_fst.number_of_states())
         #print('PARTIAL RESULT PATHS')
@@ -421,7 +486,7 @@ def combine_results(result_list, window_size, flag_encoder):
         #print('flag states', flag_state_dict.items())
         #print('final states', final_states)
 
-        #write_fst('output/before_merge.hfst', result_fst)
+        #write_fst('output/before_merge.hfst', hfst.HfstTransducer(result_fst))
         #print('before merge', result_fst)
 
         # TODO: besuche nur die neuen Zustände und update das existierende
@@ -434,7 +499,7 @@ def combine_results(result_list, window_size, flag_encoder):
         flag_state_dict, final_states, predecessor_dict = get_flag_states(result_fst, 0, flag_encoder.flag_list)
 
         #print('after merge', result_fst)
-        #write_fst('output/after_merge.hfst', result_fst)
+        #write_fst('output/after_merge.hfst', hfst.HfstTransducer(result_fst))
 
         #print('after merge')
         #print('flag states', flag_state_dict.items())
@@ -475,28 +540,36 @@ def create_result_transducer(input_str, window_size, words_per_window, error_tra
 
     #lexicon_transducer.repeat_n(words_per_window)
 
-    start = time.time()
+    start = time.clock()
 
-    input_transducers = prepare_input(input_str, window_size, flag_encoder, as_transducer=True)
+    # as_transducer=True: always use create_input_transducer from sliding_window.py
+    # as_transducer=False: if composition!=None (main:openfst==True),
+    #                      then use create_input_transducer from composition_cpp.cpp
+    #                           (which does not work with REJECTION_WEIGHT < 0, though)
+    #                      else as above
+    input_transducers = prepare_input(input_str, window_size, flag_encoder, as_transducer=False)
     output_transducers = []
     for i, input_transducer in enumerate(input_transducers):
-        results = compose_and_search(input_transducer, error_transducer, lexicon_transducer, result_num, flag_encoder, composition=composition)
-        output_transducers.append(results)
+        result = compose_and_search(input_transducer, error_transducer, lexicon_transducer, result_num, flag_encoder, composition=composition)
+        output_transducers.append(result)
     
-    after_composition = time.time()
+    after_composition = time.clock()
 
     #complete_output = combine_results(output_list, window_size)
     #complete_output = remove_redundant_paths(complete_output)
+
+    complete_outputs = []
+    for i in range(len(output_transducers[0])):
+        complete_output = combine_results(list(map(lambda x: x[i], output_transducers)), window_size, flag_encoder)
+        complete_output = hfst.HfstTransducer(complete_output)
+        complete_outputs.append(complete_output)
     
-    complete_output = combine_results(output_transducers, window_size, flag_encoder)
-    complete_output = hfst.HfstTransducer(complete_output)
-    
-    after_combination = time.time()
+    after_combination = time.clock()
 
     logging.info('Composition Time: %f', after_composition - start)
     logging.info('Combination Time: %f', after_combination - after_composition)
 
-    return complete_output
+    return complete_outputs
 
 
 def get_edit_space_transducer(flag_encoder):
@@ -532,7 +605,7 @@ def get_flag_acceptor(flag_encoder):
     
     #print('Flag Acceptor: ', flag_acceptor)
     flag_acceptor = hfst.HfstTransducer(flag_acceptor)
-    flag_acceptor.optionalize()
+    #flag_acceptor.optionalize() # wrong, and extremely time costly!
 
     return flag_acceptor
 
@@ -554,233 +627,219 @@ def get_flag_acceptor(flag_encoder):
 
     return flag_acceptor
 
+def lexicon_add_compounds(lexicon_transducer, composition_depth):
+    # FIXME: to get a better approximation of compounding rules,
+    #        we really need word classes; in the very least, we
+    #        should allow only noun compounds by guessing from capitalization
+    #        (false positives are easier to avoid with only 1 class
+    #         and nouns are easily detectable and most productive)
+    # FIXME: the current lexicon contains each form both capitalized and downcased
+    #        (so we get lots of false positives again); what we should do instead, 
+    #        is keeping only the most frequent of both forms after lexicon creation,
+    #        but dynamically allowing titlecase after sentence punctuation or at
+    #        the start of a line in lexicon transducer
+    # FIXME: similar problem for hyphenated and abbreviated words
+    # 
+    # Fugenmorpheme (Komposition) / most common German compound infixes
+    # e.g. hilf-s-motor|gesetz-es-treu|schreib[en]-maschine|beuge[n]-haft:
+    #
+    #old solution (did not respect case):
+    # connect_composition = hfst.regex('"-"|s|e|{es}|{en}:0|{en}:e')
+    # connect_composition.optionalize()
+    # connect_composition.concatenate(lexicon_transducer)
+    # connect_composition.repeat_n(composition_depth - 1)
+    # lexicon_transducer.concatenate(connect_composition)
+    #
+    #new solution (case-based noun detection, downcasing for infixes, but not for hyphenated form):
+    connect_composition = hfst.regex('0|s|e|{es}')
+    compound_base = lexicon_transducer.copy()
+    downcase = hfst.regex('|'.join(up + ':' + lo for up, lo in zip(string.ascii_uppercase + "ÄÖÜ", string.ascii_lowercase + "äöü")))
+    downcase.concatenate(hfst.regex('?+'))
+    compound_base.compose(downcase)
+    connect_composition.concatenate(compound_base)
 
-def load_transducers_bracket(error_file,
-    punctuation_file,
-    lexicon_file,
-    open_bracket_file,
-    close_bracket_file,
-    flag_encoder,
-    composition_depth=1,
-    words_per_window=3,
-    morphology_file=None):
-    """Load transducers for using the bracket model, including the
-    punctuation fst, lexicon fst, and opening/closing bracket fst.
-    Concatenate the transducers to a single fst with words_per_window
-    concatenations of the lexicon."""
+    hyphen_composition = hfst.regex('"-"')
+    compound_base = lexicon_transducer.copy()
+    uppercase = hfst.regex('|'.join(list(string.ascii_uppercase + "ÄÖÜ")))
+    uppercase.concatenate(hfst.regex('?+'))
+    compound_base.compose(uppercase)
+    hyphen_composition.concatenate(compound_base)
 
-    # load transducers
+    connect_composition.disjunct(hyphen_composition)
 
-    flag_acceptor = get_flag_acceptor(flag_encoder)
+    connect_composition.repeat_n_to_k(1, composition_depth - 1)
 
-    error_transducer = helper.load_transducer(error_file)
-    error_transducer.substitute((' ', hfst.EPSILON), get_edit_space_transducer(flag_encoder))
+    compound = lexicon_transducer.copy()
+    upcase = hfst.regex('|'.join(lo + ':' + up for up, lo in zip(string.ascii_uppercase + "ÄÖÜ", string.ascii_lowercase + "äöü")))
+    upcase.concatenate(hfst.regex('?+')) # for nonnoun-noun
+    upcase.disjunct(uppercase) # for noun-noun
+    compound.compose(upcase)
 
+    compound.concatenate(connect_composition)
+    compound.minimize()
+
+    lexicon_transducer.disjunct(compound)
+    return lexicon_transducer
+
+
+def amend_error_transducer(error_transducer, flag_encoder):
+    '''Amend the error FST, also trying to delete flags when deleting spaces.
+       Furthermore, ensure error transducer already contains flag symbols.'''
+
+    # when deleting spaces, try to also delete flags
+    error_transducer.substitute(
+        (' ', hfst.EPSILON),
+        get_edit_space_transducer(flag_encoder))
+    # ensure that the error transducer contains flags
     alphabet = error_transducer.get_alphabet()
     for flag in flag_encoder.flag_list:
         if flag not in alphabet:
             logging.warning('error transducer did not have flag %s yet', flag)
             error_transducer.insert_to_alphabet(flag)
 
-    punctuation_transducer = helper.load_transducer(punctuation_file)
-    punctuation_transducer.optionalize()
 
-    open_bracket_transducer = helper.load_transducer(open_bracket_file)
+def amend_lexicon_transducer(lexicon_transducer, morphology_transducer, composition_depth):
+    '''Amend the lexicon FSA for compound words, and for decomposed umlauts.
+       Compose with morphology to extend further, and project to an FSA.'''
+
+    # add compounds to lexicon:
+    if composition_depth > 1:
+        lexicon_transducer = lexicon_add_compounds(lexicon_transducer, composition_depth)
+    # add derivation+inflection morphology to lexicon
+    if morphology_transducer is not None:
+        lexicon_transducer.compose(morphology_transducer)
+    # allow both decomposed (as in lexicon file) and precomposed (modern)
+    # umlaut variants:
+    precompose_transducer = hfst.regex(
+        '[a\u0364:ä|o\u0364:ö|u\u0364:ü|A\u0364:Ä|O\u0364:Ö|U\u0364:Ü|?]*')
+    lexicon_transducer.compose(precompose_transducer)
+    # make sure above lexical transductions never enter the result:
+    lexicon_transducer.output_project()
+
+
+def single_token_to_window_acceptor(single_token_acceptor, flag_acceptor,
+                                    words_per_window):
+    # synchronize with left window boundary:
+    result = flag_acceptor.copy()
+    result.concatenate(single_token_acceptor)
+    # repeat single-token lexicon transducer according to maximum words per
+    # window:
+    result.repeat_n_to_k(1, words_per_window)
+    # synchronize with right window boundary:
+    result.concatenate(flag_acceptor)
+    return result
+
+
+def build_single_token_acceptor_bracket(
+            lexicon_transducer,
+            punctuation_transducer,
+            open_bracket_transducer,
+            close_bracket_transducer,
+            space_transducer):
+
+    punctuation_transducer.optionalize()
     open_bracket_transducer.optionalize()
-    close_bracket_transducer = helper.load_transducer(close_bracket_file)
     close_bracket_transducer.optionalize()
 
-    lexicon_transducer = helper.load_transducer(lexicon_file)
-
-    space_transducer = hfst.regex('% :% ')
-
-    # add morphology to lexicon
-
-    if morphology_file != None:
-        morphology_transducer = helper.load_transducer(morphology_file)
-        lexicon_transducer.compose(morphology_transducer)
-
-    # add composed words to lexicon
-
-    if composition_depth > 1:
-
-        connect_composition = hfst.regex('s|e|es|en:0|en:e') # Fugenmorpheme (Komposition) / most common German compound infixes e.g. hilf-s-motor|gesetz-es-treu|schreib[en]-maschine|beuge[n]-haft
-        connect_composition.optionalize()
-
-        optional_lexicon_transducer = lexicon_transducer.copy()
-        optional_lexicon_transducer.optionalize()
-
-        connect_composition.concatenate(optional_lexicon_transducer)
-        connect_composition.repeat_n(composition_depth - 1)
-
-        lexicon_transducer.concatenate(connect_composition)
-
-    # combine transducers to lexicon transducer
-    result_lexicon_transducer = flag_acceptor.copy()
-    result_lexicon_transducer.concatenate(open_bracket_transducer)
-    result_lexicon_transducer.concatenate(lexicon_transducer)
-    result_lexicon_transducer.concatenate(punctuation_transducer)
-    result_lexicon_transducer.concatenate(close_bracket_transducer)
-    result_lexicon_transducer.concatenate(space_transducer)
-    result_lexicon_transducer.optionalize() # rs: why?
-
-    result_lexicon_transducer.repeat_n(words_per_window)
-
-    result_lexicon_transducer.concatenate(flag_acceptor)
-
-    return error_transducer, result_lexicon_transducer
+    result = hfst.epsilon_fst()
+    result.concatenate(open_bracket_transducer) # (optional)
+    result.concatenate(lexicon_transducer) # includes dash and numbers
+    result.concatenate(punctuation_transducer) # (optional)
+    result.concatenate(close_bracket_transducer) # (optional)
+    result.concatenate(space_transducer)
+    return result
 
 
+def build_single_token_acceptor_preserve_punctuation(
+            lexicon_transducer,
+            punctuation_transducer,
+            space_transducer):
 
-def load_transducers_preserve_punctuation(error_file,
-    punctuation_file,
-    lexicon_file,
-    flag_encoder,
-    composition_depth=1,
-    words_per_window=3,
-    morphology_file=None):
-    """Load transducers for preserving punctuation, including the
-    punctuation fst (for any punctuation) and lexicon fst.
-    The error model should be unable to change any characters into punctuation
-    characters.
-    Concatenate the transducers to a single fst with words_per_window
-    concatenations of the lexicon."""
-
-    # load transducers
-
-    flag_acceptor = get_flag_acceptor(flag_encoder)
-
-    error_transducer = helper.load_transducer(error_file)
-    error_transducer.substitute((' ', hfst.EPSILON), get_edit_space_transducer(flag_encoder))
-
-    punctuation_transducer = helper.load_transducer(punctuation_file)
-    #punctuation_transducer.optionalize()
-
-    #open_bracket_transducer = helper.load_transducer(open_bracket_file)
-    #open_bracket_transducer.optionalize()
-    #close_bracket_transducer = helper.load_transducer(close_bracket_file)
-    #close_bracket_transducer.optionalize()
-
-    lexicon_transducer = helper.load_transducer(lexicon_file)
-
-    space_transducer = hfst.regex('% :% ')
-
-    # add morphology to lexicon
-
-    if morphology_file != None:
-        morphology_transducer = helper.load_transducer(morphology_file)
-        lexicon_transducer.compose(morphology_transducer)
-
-    # add composed words to lexicon
-
-    if composition_depth > 1:
-
-        connect_composition = hfst.regex('s|e|es|en:0|en:e') # Fugenmorpheme (Komposition) / most common German compound infixes e.g. hilf-s-motor|gesetz-es-treu|schreib[en]-maschine|beuge[n]-haft
-        connect_composition.optionalize()
-
-        optional_lexicon_transducer = lexicon_transducer.copy()
-        optional_lexicon_transducer.optionalize()
-
-        connect_composition.concatenate(optional_lexicon_transducer)
-        connect_composition.repeat_n(composition_depth - 1)
-
-        lexicon_transducer.concatenate(connect_composition)
-
-    # combine transducers to lexicon transducer
-    result_lexicon_transducer = flag_acceptor.copy()
-    #result_lexicon_transducer.concatenate(open_bracket_transducer)
-    result_lexicon_transducer.concatenate(punctuation_transducer)
-    result_lexicon_transducer.concatenate(lexicon_transducer)
-    result_lexicon_transducer.concatenate(punctuation_transducer)
-    #result_lexicon_transducer.concatenate(close_bracket_transducer)
-    result_lexicon_transducer.concatenate(space_transducer)
-    result_lexicon_transducer.optionalize() # rs: why?
-
-    result_lexicon_transducer.repeat_n(words_per_window)
-
-    result_lexicon_transducer.concatenate(flag_acceptor)
-
-    return error_transducer, result_lexicon_transducer
+    result = hfst.epsilon_fst()
+    result.concatenate(punctuation_transducer) # both left and right contexts
+    result.concatenate(lexicon_transducer) # includes dash and numbers, has no edits removing punctuation
+    result.concatenate(punctuation_transducer) # both left and right contexts
+    result.concatenate(space_transducer)
+    return result
 
 
-def load_transducers_inter_word(error_file,
-    lexicon_file,
-    punctuation_left_file,
-    punctuation_right_file,
-    flag_encoder,
-    words_per_window = 3,
-    composition_depth = 1,
-    morphology_file=None):
-    """Load transducers for using the inter-word model, including the
-    lexicon fst, and left/right punctuation fst.
-    Concatenate the transducers to a single fst with words_per_window
-    concatenations of the lexicon."""
-
-    # TODO: handle flag diacritics; the construction of the lexicon is not
-    # correct anymore; the punctuation_right_transducer as constructed
-    # contains a space character at the beginning which shouldn't be there,
-    # since the space is placed at the end of each window (with no
-    # punctuation characters after that); since this model should be
-    # changed to a complete punctuation ngram model anyway, the corrections
-    # can be made on that occasion
-
-    # load transducers
-
-    flag_acceptor = get_flag_acceptor(flag_encoder)
-    
-    error_transducer = helper.load_transducer(error_file)
-
-    punctuation_left_transducer = helper.load_transducer(punctuation_left_file)
-    punctuation_right_transducer = helper.load_transducer(punctuation_right_file)
+def build_single_token_acceptor_inter_word(
+            lexicon_transducer,
+            punctuation_left_transducer,
+            punctuation_right_transducer,
+            space_transducer):
 
     punctuation_left_transducer.optionalize()
     punctuation_right_transducer.optionalize()
 
-    lexicon_transducer = helper.load_transducer(lexicon_file)
-
-    space_transducer = hfst.regex('% :% ')
-
-    # add morphology to lexicon
-
-    if morphology_file != None:
-        morphology_transducer = helper.load_transducer(morphology_file)
-        lexicon_transducer.compose(morphology_transducer)
-
-    # add composed words to lexicon
-
-    if composition_depth > 1:
-
-        connect_composition = hfst.regex('s|e|es|en:0|en:e') # Fugenmorpheme (Komposition) / most common German compound infixes e.g. hilf-s-motor|gesetz-es-treu|schreib[en]-maschine|beuge[n]-haft
-        connect_composition.optionalize()
-
-        optional_lexicon_transducer = lexicon_transducer.copy()
-        optional_lexicon_transducer.optionalize()
-
-        connect_composition.concatenate(optional_lexicon_transducer)
-        connect_composition.repeat_n(composition_depth - 1)
-
-        lexicon_transducer.concatenate(connect_composition)
-
-
-    # combine transducers to lexicon transducer
-
-    result_lexicon_transducer = lexicon_transducer.copy()
+    result = hfst.epsilon_fst()
+    result_lexicon_transducer.concatenate(lexicon_transducer)
     result_lexicon_transducer.concatenate(punctuation_left_transducer)
     result_lexicon_transducer.concatenate(space_transducer)
     result_lexicon_transducer.concatenate(punctuation_right_transducer)
-    result_lexicon_transducer.optionalize() # rs: why?
+    return result
 
-    result_lexicon_transducer.repeat_n(words_per_window)
-    #result_lexicon_transducer.repeat_n(3)
 
-    output_lexicon = punctuation_right_transducer.copy()
-    output_lexicon.concatenate(result_lexicon_transducer)
+def build_single_token_acceptor(transducers, punctuation_method):
 
-    final_result_lexicon_transducer = flag_acceptor.copy()
-    final_result_lexicon_transducer.concatenate(output_lexicon)
-    final_result_lexicon_transducer.concatenate(flag_acceptor)
+    def _require_transducers(tr_names):
+        for tr_name in tr_names:
+            assert tr_name in transducers and \
+                   isinstance(transducers[tr_name], hfst.HfstTransducer)
 
-    return error_transducer, output_lexicon
+    space_transducer = hfst.regex('% :% ')
+    if punctuation_method == 'bracket':
+        _require_transducers(
+            ['lexicon', 'punctuation', 'open_bracket', 'close_bracket'])
+        return build_single_token_acceptor_bracket(
+            transducers['lexicon'],
+            transducers['punctuation'],
+            transducers['open_bracket'],
+            transducers['close_bracket'],
+            space_transducer)
+    elif punctuation_method == 'preserve':
+        _require_transducers(['lexicon', 'punctuation'])
+        return build_single_token_acceptor_preserve_punctuation(
+            transducers['lexicon'],
+            transducers['punctuation'],
+            space_transducer)
+    elif punctuation_method == 'lm':
+        _require_transducers(
+            ['lexicon', 'punctuation_left', 'punctuation_right'])
+        return build_single_token_acceptor_inter_word(
+            transducers['lexicon'],
+            transducers['punctuation_left'],
+            transducers['punctuation_right'],
+            space_transducer)
+
+
+def build_model(transducers,
+    punctuation_method='bracket',
+    composition_depth=1,
+    words_per_window=3):
+    """
+    Builds a model for the sliding window algorithm:
+    - amends the error transducer: ensures that it accepts flags;
+    - amends the lexicon transducer: adds compounding, morphology and
+      historical umlauts;
+    - converts the lexicon transducer into a transducer accepting windows of 
+      at most `words_per_window` words, with punctuation in between.
+    """
+
+    flag_encoder = transducers['flag_encoder']
+    flag_acceptor = get_flag_acceptor(flag_encoder)
+    amend_error_transducer(transducers['error'], flag_encoder)
+    amend_lexicon_transducer(
+        transducers['lexicon'],
+        transducers['morphology'] if 'morphology' in transducers else None,
+        composition_depth)
+
+    single_token_acceptor = build_single_token_acceptor(
+        transducers, punctuation_method=punctuation_method)
+    window_acceptor = single_token_to_window_acceptor(
+        single_token_acceptor, flag_acceptor, words_per_window)
+
+    return transducers['error'], window_acceptor
 
 
 def complete_merge(basic_fst, flag_encoder):
@@ -837,26 +896,29 @@ def window_size_1_2(input_str, error_transducer, lexicon_transducer, flag_encode
 
     # create results transducers for window sizes 1 and 2, disjunct and merge states
 
-    window_1 = create_result_transducer(\
+    windows_1 = create_result_transducer(
         input_str, 1, 3, error_transducer, lexicon_transducer, result_num, flag_encoder, composition)
-    window_2 = create_result_transducer(\
+    windows_2 = create_result_transducer(
         input_str, 2, 3, error_transducer, lexicon_transducer, result_num, flag_encoder, composition)
-    window_1.disjunct(window_2)
-    complete_output_basic = hfst.HfstBasicTransducer(window_1)
 
-    before_merge = time.time()
+    complete_outputs = []
+    for i, (window_1, window_2) in enumerate(zip(windows_1, windows_2)):
+        window_1.disjunct(window_2)
+        complete_output_basic = hfst.HfstBasicTransducer(window_1)
+        
+        before_merge = time.clock()
+        
+        complete_merge(complete_output_basic, flag_encoder)
+        
+        after_merge = time.clock()
+        logging.info('Merge Time: %f', after_merge - before_merge)
+        
+        complete_output = hfst.HfstTransducer(complete_output_basic)
+        #complete_output.minimize()
 
-    complete_merge(complete_output_basic, flag_encoder)
-
-    after_merge = time.time()
-    logging.info('Merge Time: %f', after_merge - before_merge)
-
-    complete_output = hfst.HfstTransducer(complete_output_basic)
-
-    #complete_output.prune()
-    #complete_output.minimize()
-
-    return complete_output
+        complete_outputs.append(complete_output)
+    
+    return complete_outputs
 
 
 def remove_flags(fst, flag_encoder):
@@ -928,7 +990,7 @@ class FlagEncoder:
 
 def main():
 
-    start = time.time()
+    start = time.clock()
 
     # command line options
     parser = argparse.ArgumentParser(description='OCR post-correction ocrd-cor-asv-fst one-shot tool')
@@ -980,6 +1042,7 @@ def main():
 
     # set input_str to command-line argument if given
     input_str = args.inputline
+    global REJECTION_WEIGHT
     REJECTION_WEIGHT = args.rejection_weight
 
     #window_size = 2
@@ -995,10 +1058,19 @@ def main():
         error_transducer, lexicon_transducer = load_transducers_bracket(
             'fst/max_error_3_context_23_dta.hfst',
             #'fst/max_error_3_context_23_dta19-reduced.Fraktur4.hfst',
-            'fst/punctuation_transducer_dta.hfst',
-            'fst/lexicon_transducer_dta.hfst',
-            'fst/open_bracket_transducer_dta.hfst',
-            'fst/close_bracket_transducer_dta.hfst',
+            #'fst/max_error_3_context_23_dta19-reduced.deu-frak3.hfst',
+            'fst/punctuation_transducer_dta19-reduced.testdata.hfst',
+            #'fst/punctuation_transducer_dta19-reduced.traindata.hfst',
+            #'fst/lexicon_komplett.again/punctuation_transducer_dta.hfst',
+            'fst/lexicon_transducer_dta19-reduced.testdata.hfst',
+            #'fst/lexicon_transducer_dta19-reduced.traindata.hfst',
+            #'fst/lexicon_komplett.again/lexicon_transducer_dta.hfst',
+            'fst/open_bracket_transducer_dta19-reduced.testdata.hfst',
+            #'fst/open_bracket_transducer_dta19-reduced.traindata.hfst',
+            #'fst/lexicon_komplett.again/open_bracket_transducer_dta.hfst',
+            'fst/close_bracket_transducer_dta19-reduced.testdata.hfst',
+            #'fst/close_bracket_transducer_dta19-reduced.traindata.hfst',
+            #'fst/lexicon_komplett.again/close_bracket_transducer_dta.hfst',
             flag_encoder,
             composition_depth=args.composition_depth,
             words_per_window=args.words_per_window)
@@ -1010,7 +1082,8 @@ def main():
         error_transducer, lexicon_transducer = load_transducers_inter_word(
             'fst/max_error_3_context_23_dta.hfst',
             #'fst/max_error_3_context_23_dta19-reduced.Fraktur4.hfst',
-            'fst/lexicon_transducer_dta.hfst',
+            'fst/lexicon_transducer_dta19-reduced.testdata.hfst',
+            #'fst/lexicon_transducer_dta19-reduced.traindata.hfst',
             'fst/left_punctuation.hfst',
             'fst/right_punctuation.hfst',
             flag_encoder,
@@ -1023,7 +1096,8 @@ def main():
             'fst/preserve_punctuation_max_error_3_context_23.hfst',
             #'fst/max_error_3_context_23_preserve_punctuation_dta19-reduced.Fraktur4.hfst',
             'fst/any_punctuation_no_space.hfst',
-            'fst/lexicon_transducer_dta.hfst',
+            'fst/lexicon_transducer_dta19-reduced.testdata.hfst',
+            #'fst/lexicon_transducer_dta19-reduced.traindata.hfst',
             flag_encoder,
             composition_depth=args.composition_depth,
             words_per_window=args.words_per_window)
@@ -1034,35 +1108,36 @@ def main():
 
         # write lexicon and error transducer files in OpenFST format
         # (cannot use one file for both with OpenFST::Read)
-        with tempfile.NamedTemporaryFile() as error_f:
-            with tempfile.NamedTemporaryFile() as lexicon_f:
+        with tempfile.NamedTemporaryFile(prefix='cor-asv-fst-sw-error') as error_f:
+            with tempfile.NamedTemporaryFile(prefix='cor-asv-fst-sw-lexicon') as lexicon_f:
                 write_fst(error_f.name, error_transducer)
                 write_fst(lexicon_f.name, lexicon_transducer)
+                #write_fst('output/error.fst', error_transducer)
+                #write_fst('output/lexicon.fst', lexicon_transducer)
                 
                 # generate Composition Object
                 composition = pyComposition(error_f.name, lexicon_f.name, args.result_num, args.rejection_weight)
                 logging.debug(composition)
                 
-                preparation_done = time.time()
+                preparation_done = time.clock()
                 logging.info('Preparation Time: %f', preparation_done - start)
                 
                 # apply correction using Composition Object
-                complete_output = window_size_1_2(input_str, None, None, flag_encoder, args.result_num, composition)
+                complete_output = window_size_1_2(input_str, None, None, flag_encoder, args.result_num, composition)[0]
 
     else:
 
-        preparation_done = time.time()
+        preparation_done = time.clock()
         logging.info('Preparation Time: %f', preparation_done - start)
 
         # apply correction directly in hfst
 
-        complete_output = window_size_1_2(input_str, error_transducer, lexicon_transducer, flag_encoder, args.result_num)
+        complete_output = window_size_1_2(input_str, error_transducer, lexicon_transducer, flag_encoder, args.result_num)[0]
 
     # write output to filesystem
 
     #write_fst('output/output_str.nondet.hfst', complete_output)
 
-    complete_output.prune()
     complete_output.determinize()
 
     #write_fst('output/output_str.hfst', complete_output)
@@ -1081,6 +1156,8 @@ def main():
     logging.debug('COMPLETE OUTPUT NO FLAGS')
     print_shortest_path(complete_output)
 
+    logging.info(list(complete_output.extract_shortest_paths(output='text').items())[0][0].replace(hfst.EPSILON, ''))
+    
     ## load and apply language model
 
     lm_file = 'fst/lang_mod_theta_0_000001.mod.modified.hfst'
@@ -1100,7 +1177,8 @@ def main():
 
     logging.debug('LANGUAGE MODEL OUTPUT')
     print_output_paths(complete_output)
-
+    
+    logging.info(list(complete_output.extract_shortest_paths(output='text').items())[0][0].replace(hfst.EPSILON, ''))
 
 if __name__ == '__main__':
     main()

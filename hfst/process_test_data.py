@@ -1,4 +1,5 @@
 from os import listdir
+import os.path
 
 import logging
 import argparse
@@ -11,11 +12,188 @@ import sliding_window as sw
 import helper
 
 # globals (for painless cow-semantic shared memory fork-based multiprocessing)
-lowercase_transducer = None
-lm_transducer = None
-flag_encoder = None
-composition = None
-args = None
+model = {}
+gl_config = {}
+    
+
+def prepare_composition(lexicon_transducer, error_transducer, result_num, rejection_weight):
+    # write lexicon and error transducer files in OpenFST format
+    # (cannot use one file for both with OpenFST::Read)
+    result = None
+    with tempfile.NamedTemporaryFile(prefix='cor-asv-fst-sw-error') as error_f:
+        with tempfile.NamedTemporaryFile(prefix='cor-asv-fst-sw-lexicon') as lexicon_f:
+            sw.write_fst(error_f.name, error_transducer)
+            sw.write_fst(lexicon_f.name, lexicon_transducer)
+            
+            result = pyComposition(
+                error_f.name, lexicon_f.name,
+                result_num, rejection_weight)
+    return result
+
+
+def prepare_model(punctuation_method, **kwargs):
+    result = { 'flag_encoder' : sw.FlagEncoder() }
+
+    transducers = {
+        'flag_encoder' : result['flag_encoder'],
+        'lexicon' : helper.load_transducer('fst/lexicon_transducer_dta.hfst')
+    }
+    if punctuation_method == 'bracket':
+        transducers['error'] = helper.load_transducer(
+            'fst/max_error_3_context_23.hfst')
+        transducers['punctuation'] = helper.load_transducer(
+            'fst/punctuation_transducer_dta.hfst')
+        transducers['open_bracket'] = helper.load_transducer(
+            'fst/open_bracket_transducer_dta.hfst')
+        transducers['close_bracket'] = helper.load_transducer(
+            'fst/close_bracket_transducer_dta.hfst')
+    elif punctuation_method == 'lm':
+        transducers['error'] = helper.load_transducer(
+            'fst/max_error_3_context_23.hfst')
+        transducers['punctuation_left'] = helper.load_transducer(
+            'fst/left_punctuation.hfst')
+        transducers['punctuation_right'] = helper.load_transducer(
+            'fst/right_punctuation.hfst')
+    elif punctuation_method == 'preserve':
+        transducers['error'] = helper.load_transducer(
+            'fst/preserve_punctuation_max_error_3_context_23.hfst')
+        transducers['punctuation'] = helper.load_transducer(
+            'fst/any_punctuation_no_space.hfst')
+
+    error_tr, lexicon_tr = sw.build_model(transducers,
+        punctuation_method=punctuation_method,
+        composition_depth=kwargs['composition_depth'],
+        words_per_window=kwargs['words_per_window'])
+    result['composition'] = prepare_composition(
+        lexicon_tr, error_tr, kwargs['result_num'], kwargs['rejection_weight'])
+
+    if kwargs['apply_lm']:
+        result['lm_transducer'] = helper.load_transducer(
+            'fst/lang_mod_theta_0_000001.mod.modified.hfst')
+        result['lowercase_transducer'] = helper.load_transducer(
+            'fst/lowercase.hfst')
+
+    return result
+
+
+# needs to be global for multiprocessing
+def correct_string(basename, input_str):
+    global model, gl_config
+
+    def _apply_lm(output_tr):
+        output_tr.output_project()
+        # FIXME: should also be composed via OpenFST library (pyComposition)
+        output_tr.compose(model['lowercase_transducer'])
+        output_tr.compose(model['lm_transducer'])
+        output_tr.input_project()
+
+    def _save_output_str(output_str, i):
+        if sw.REJECTION_WEIGHT < 0: # for ROC evaluation: multiple output files
+            suffix = gl_config['output_suffix'] + "." + "rw_" + str(i)
+        else:
+            suffix = gl_config['output_suffix']
+
+        filename = basename + "." + suffix
+        with open(os.path.join(gl_config['directory'], filename), 'w') as f:
+            f.write(output_str)
+
+    def _output_tr_to_string(tr):
+        paths = hfst.HfstTransducer(tr).extract_paths(
+            max_number=1, max_cycles=0)
+        return list(paths.items())[0][1][0][0]\
+                    .replace(hfst.EPSILON, '')              # really necessary?
+    
+    logging.debug('input_str:  %s', input_str)
+
+    try:
+        complete_outputs = sw.window_size_1_2(
+            input_str, None, None, model['flag_encoder'],
+            gl_config['result_num'], model['composition'])
+        
+        for i, complete_output in enumerate(complete_outputs):
+            if not gl_config['apply_lm']:
+                complete_output.n_best(1)
+
+            complete_output = sw.remove_flags(
+                complete_output, model['flag_encoder'])
+            if gl_config['apply_lm']:
+                _apply_lm(complete_output)
+            output_str = _output_tr_to_string(complete_output)
+            _save_output_str(output_str, i)
+            logging.debug('output_str: %s', output_str)
+
+    except Exception as e:
+        logging.exception('exception for window result of "%s"' % input_str)
+        raise e
+    
+    return basename, input_str, output_str
+
+
+def parallel_process(input_pairs, num_processes):
+    with mp.Pool(processes=num_processes) as pool:
+        result = pool.starmap_async(
+            correct_string, input_pairs,
+            error_callback=logging.error)
+        result.wait()
+        if result.successful():
+            return result.get()
+        else:
+            raise RuntimeError('error during parallel processing')
+
+
+def print_results(results, gt_dict):
+    n = len(results)
+    for i, (basename, input_str, output_str) in enumerate(results):
+        print("%03d/%03d: %s" % (i+1, n, basename))
+        print(input_str)
+        print(output_str)
+        print(gt_dict[basename])
+        print()
+
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(
+        description='OCR post-correction ocrd-cor-asv-fst batch-processor '
+                    'tool')
+    parser.add_argument(
+        'directory', metavar='PATH',
+        help='directory for input and output files')
+    parser.add_argument(
+        '-I', '--input-suffix', metavar='SUF', type=str, default='txt',
+        help='input (OCR) filenames suffix')
+    parser.add_argument(
+        '-O', '--output-suffix', metavar='SUF', type=str,
+        default='cor-asv-fst.txt', help='output (corrected) filenames suffix')
+    parser.add_argument(
+        '-P', '--punctuation', metavar='MODEL', type=str,
+        choices=['bracket', 'lm', 'preserve'], default='bracket',
+        help='how to model punctuation between words (bracketing rules, '
+             'inter-word language model, or keep unchanged)')
+    parser.add_argument(
+        '-W', '--words-per-window', metavar='NUM', type=int, default=3,
+        help='maximum number of words in one window')
+    parser.add_argument(
+        '-R', '--result-num', metavar='NUM', type=int, default=10,
+        help='result paths per window')
+    parser.add_argument(
+        '-D', '--composition-depth', metavar='NUM', type=int, default=2,
+        help='number of lexicon words that can be concatenated')
+    parser.add_argument(
+        '-J', '--rejection-weight', metavar='WEIGHT', type=float, default=1.5,
+        help='transition weight for unchanged input window')
+    parser.add_argument(
+        '-A', '--apply-lm', action='store_true', default=False,
+        help='also compose with n-gram language model for rescoring')
+    parser.add_argument(
+        '-Q', '--processes', metavar='NUM', type=int, default=1,
+        help='number of processes to use in parallel')
+    parser.add_argument(
+        '-L', '--log-level', metavar='LEVEL', type=str,
+        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+        default='INFO',
+        help='verbosity of logging output (standard log levels)')
+    return parser.parse_args()
+
 
 def main():
     """
@@ -25,140 +203,40 @@ def main():
     specified in output_suffix.
     """
 
-    global lowercase_transducer, lm_transducer, flag_encoder, args, composition
+    global model, gl_config
     
-    parser = argparse.ArgumentParser(description='OCR post-correction ocrd-cor-asv-fst batch-processor tool')
-    parser.add_argument('directory', metavar='PATH', help='directory for input and output files')
-    parser.add_argument('-I', '--input-suffix', metavar='SUF', type=str, default='txt', help='input (OCR) filenames suffix')
-    parser.add_argument('-O', '--output-suffix', metavar='SUF', type=str, default='cor-asv-fst.txt', help='output (corrected) filenames suffix')
-    parser.add_argument('-P', '--punctuation', metavar='MODEL', type=str, choices=['bracket', 'lm', 'preserve'], default='bracket', help='how to model punctuation between words (bracketing rules, inter-word language model, or keep unchanged)')
-    parser.add_argument('-W', '--words-per-window', metavar='NUM', type=int, default=3, help='maximum number of words in one window')
-    parser.add_argument('-R', '--result-num', metavar='NUM', type=int, default=10, help='result paths per window')
-    parser.add_argument('-D', '--composition-depth', metavar='NUM', type=int, default=2, help='number of lexicon words that can be concatenated')
-    parser.add_argument('-J', '--rejection-weight', metavar='WEIGHT', type=float, default=1.5, help='transition weight for unchanged input window')
-    parser.add_argument('-A', '--apply-lm', action='store_true', default=False, help='also compose with n-gram language model for rescoring')
-    parser.add_argument('-Q', '--processes', metavar='NUM', type=int, default=1, help='number of processes to use in parallel')
-    parser.add_argument('-L', '--log-level', metavar='LEVEL', type=str, choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'], default='INFO', help='verbosity of logging output (standard log levels)') # WARN
-    args = parser.parse_args()
-
+    # parse command-line arguments and set up various parameters
+    args = parse_arguments()
     logging.basicConfig(level=logging.getLevelName(args.log_level))
+    gl_config = {
+        'result_num' : args.result_num,
+        'apply_lm' : args.apply_lm,
+        'output_suffix' : args.output_suffix,
+        'directory' : args.directory,
+    }
+    sw.REJECTION_WEIGHT = args.rejection_weight
     
-    # prepare transducers
+    # load all transducers and build a model out of them
+    model = prepare_model(
+        args.punctuation,
+        apply_lm = args.apply_lm,
+        composition_depth = args.composition_depth,
+        words_per_window = args.words_per_window,
+        rejection_weight = args.rejection_weight,
+        result_num = args.result_num)
 
-    flag_encoder = sw.FlagEncoder()
+    # load test data
+    gt_dict = helper.create_dict(args.directory, 'gt.txt')
+    ocr_dict = helper.create_dict(args.directory, args.input_suffix)
 
-    #ocr_suffix = 'Fraktur4' # suffix of input files
-    #output_suffix = ocr_suffix + '_preserve_2_no_space' # suffix of output files
-    #complete_output_suffix = '.' + output_suffix + '.txt'
+    # process test data and output results
+    results = parallel_process(ocr_dict.items(), args.processes) \
+              if args.processes > 1 \
+              else [correct_string(basename, input_str) \
+                    for basename, input_str in ocr_dict.items()]
+    print_results(results, gt_dict)
 
-    # load and construct transducers
-
-    if args.punctuation == 'bracket':
-        ## bracketing rules
-        error_transducer, lexicon_transducer = sw.load_transducers_bracket(
-            'fst/max_error_3_context_23_dta.hfst',
-            #'fst/max_error_3_context_23_dta19-reduced.' + args.input_suffix[:-3] + 'hfst',
-            'fst/punctuation_transducer_dta.hfst',
-            'fst/lexicon_transducer_dta.hfst',
-            'fst/open_bracket_transducer_dta.hfst',
-            'fst/close_bracket_transducer_dta.hfst',
-            flag_encoder,
-            composition_depth=args.composition_depth,
-            words_per_window=args.words_per_window)
-        
-    elif args.punctuation == 'lm':
-        ## inter-word language model
-        error_transducer, lexicon_transducer = sw.load_transducers_inter_word(
-            'fst/max_error_3_context_23_dta.hfst',
-            #'fst/max_error_3_context_23_dta19-reduced.' + args.input_suffix[:-3] + 'hfst',
-            'fst/lexicon_transducer_dta.hfst',
-            'fst/left_punctuation.hfst',
-            'fst/right_punctuation.hfst',
-            flag_encoder,
-            words_per_window=args.words_per_window,
-            composition_depth=args.composition_depth)
-        
-    elif args.punctuation == 'preserve':
-        ## no punctuation changes
-        error_transducer, lexicon_transducer = sw.load_transducers_preserve_punctuation(
-            'fst/preserve_punctuation_max_error_3_context_23.hfst',
-            #'fst/max_error_3_context_23_preserve_punctuation_dta19-reduced.' + args.input_suffix[:-3] + 'hfst',
-            'fst/any_punctuation_no_space.hfst',
-            'fst/lexicon_transducer_dta.hfst',
-            flag_encoder,
-            composition_depth=args.composition_depth,
-            words_per_window=args.words_per_window)
-        
-    
-    # prepare Composition Object
-
-    # write lexicon and error transducer files in OpenFST format
-    # (cannot use one file for both with OpenFST::Read)
-    with tempfile.NamedTemporaryFile() as error_f:
-        with tempfile.NamedTemporaryFile() as lexicon_f:
-            for filename, fst in [(error_f.name, error_transducer), (lexicon_f.name, lexicon_transducer)]:
-                out = hfst.HfstOutputStream(filename=filename, hfst_format=False, type=hfst.ImplementationType.TROPICAL_OPENFST_TYPE)
-                out.write(fst)
-                out.close()
-            
-            composition = pyComposition(error_f.name, lexicon_f.name, args.result_num, args.rejection_weight)
-            
-            if args.apply_lm:
-                lm_file = 'fst/lang_mod_theta_0_000001.mod.modified.hfst'
-                lowercase_file = 'fst/lowercase.hfst'
-                
-                lm_transducer = helper.load_transducer(lm_file)
-                lowercase_transducer = helper.load_transducer(lowercase_file)
-            
-            sw.REJECTION_WEIGHT = args.rejection_weight
-    
-            # read and process test data
-            
-            gt_dict = helper.create_dict(args.directory + "/", 'gt.txt')
-            ocr_dict = helper.create_dict(args.directory + "/", args.input_suffix)
-            
-            results = []
-            with mp.Pool(processes=args.processes) as pool:
-                params = list(ocr_dict.items()) #[10:20]
-                results = pool.starmap(process, params)
-            
-            for i, (basename, input_str, output_str) in enumerate(results):
-                print("%03d/%03d: %s" % (i+1, len(params), basename))
-                print(input_str)
-                print(output_str)
-                print(gt_dict[basename])
-                print()
-    
-    return
-
-# needs to be global for mp:
-def process(basename, input_str):
-    global lowercase_transducer, lm_transducer, flag_encoder, args, composition
-    
-    logging.info('input_str:  %s', input_str)
-    
-    complete_output = sw.window_size_1_2(input_str, None, None, flag_encoder, args.result_num, composition)
-    if not args.apply_lm:
-        complete_output.n_best(1)
-        
-    complete_output = sw.remove_flags(complete_output, flag_encoder)
-    
-    if args.apply_lm:
-        complete_output.output_project()
-        # FIXME: should also be composed via OpenFST library (pyComposition)
-        complete_output.compose(lowercase_transducer)
-        complete_output.compose(lm_transducer)
-        complete_output.input_project()
-    
-    complete_paths = hfst.HfstTransducer(complete_output).extract_paths(max_number=1, max_cycles=0)
-    output_str = list(complete_paths.items())[0][1][0][0].replace(hfst.EPSILON, '') # really necessary?
-
-    logging.info('output_str: %s', output_str)
-    
-    with open(args.directory + "/" + basename + "." + args.output_suffix, 'w') as f:
-        f.write(output_str)
-    
-    return basename, input_str, output_str
 
 if __name__ == '__main__':
     main()
+

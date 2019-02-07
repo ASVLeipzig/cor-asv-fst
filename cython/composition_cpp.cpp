@@ -1,6 +1,7 @@
 #include "composition_cpp.h"
 
 //#define COMPOSITION_TIMES 1 /* print cputime measurements on stderr? */
+//#define VERIFY_TRANSDUCERS 1 /* verify incoming and outgoing transducers? */
 
 /* Instantiate the OpenFST-based string correction:
    - read error transducer from the given filename,
@@ -30,7 +31,7 @@ Composition::Composition(const string &error_file, const string &lexicon_file, i
     this->symbol_table = MergeSymbolTable(output_symbols, input_symbols, &relabel);
 
     if (relabel) {
-      Relabel(lexicon_transducer, this->symbol_table, this->symbol_table);
+      Relabel(lexicon_transducer, this->symbol_table, NULL);
     }
 
     lexicon_transducer->SetOutputSymbols(this->symbol_table);
@@ -41,8 +42,8 @@ Composition::Composition(const string &error_file, const string &lexicon_file, i
 
     /*
     // write symbol table to file
-    this->symbol_table.WriteText("symbol_table.txt"); 
-    this->symbol_table.Write("symbol_table.bin"); 
+    this->symbol_table->WriteText("symbol_table.txt"); 
+    this->symbol_table->Write("symbol_table.bin"); 
     */
     
     // perfom arc sort
@@ -75,14 +76,19 @@ Composition::Composition(const string &error_file, const string &lexicon_file, i
     /* same here: we want a WeightConvertMapper for a Converter that depends on 
        rejection_weight given in the constructor. 
      */
-    this->weight_mapper = new WeightConvertMapper<StdArc, StdArc, RejectionWeight>((RejectionWeight(W(this->rejection_weight))));
+    if (this->rejection_weight < 0)
+      // caller wants to do backoff_result herself
+      this->weight_mapper = NULL;
+    else
+      this->weight_mapper = new WeightConvertMapper<StdArc, StdArc, RejectionWeight>((RejectionWeight(W(this->rejection_weight))));
     
 }
 
 
 Composition::~Composition() {
   delete this->string_compiler;
-  delete this->weight_mapper;
+  if (this->weight_mapper)
+    delete this->weight_mapper;
 }
 
 
@@ -102,15 +108,27 @@ string Composition::correct_transducer_file(const string input_transducer_filena
     throw std::runtime_error("cannot read input transducer file");
   }
 
-  // relabel input transducer with big symbol table
-  Relabel(input_transducer.get(), this->symbol_table, this->symbol_table);
+  // merge and relabel input transducer with big symbol table
+  bool relabel;
 
-  input_transducer->SetInputSymbols(this->symbol_table);
+  this->symbol_table = MergeSymbolTable(*this->symbol_table, *input_transducer->OutputSymbols(), &relabel);
+
+  if (relabel)
+    Relabel(input_transducer.get(), nullptr, this->symbol_table);
+
   input_transducer->SetOutputSymbols(this->symbol_table);
+  error_transducer->SetInputSymbols(this->symbol_table);
+  error_transducer->SetOutputSymbols(this->symbol_table);
+  lexicon_transducer->SetInputSymbols(this->symbol_table);
+  lexicon_transducer->SetOutputSymbols(this->symbol_table);
 
   std::unique_ptr<SVF> nbest_transducer =
     compose_and_search(input_transducer.get(),
                        false); // lazy
+#ifdef VERIFY_TRANSDUCERS
+  if (!Verify(*nbest_transducer))
+    throw std::runtime_error("composition result is bad");
+#endif
     
   //string filename = string("output/") +  input_transducer_filename + string(".fst");
   // FIXME: use StdVectorFst::FstToString() here and wrap with HfstInputStream(std::istringstream) in Cython
@@ -148,6 +166,10 @@ string Composition::correct_transducer_string(const string input_transducer_str)
   std::unique_ptr<SVF> nbest_transducer =
     compose_and_search(input_transducer.get(),
                        false); // lazy
+#ifdef VERIFY_TRANSDUCERS
+  if (!Verify(*nbest_transducer))
+    throw std::runtime_error("composition result is bad");
+#endif
 
   // FIXME: use StdVectorFst::FstToString() here and wrap with HfstInputStream(std::istringstream) in Cython
   string filename = std::tmpnam(NULL);
@@ -173,7 +195,12 @@ string Composition::correct_string(const string input_str) {
   std::unique_ptr<SVF> nbest_transducer =
     compose_and_search(input_str,
                        false); // lazy
-    
+
+#ifdef VERIFY_TRANSDUCERS
+  if (!Verify(*nbest_transducer))
+    throw std::runtime_error("composition result is bad");
+#endif
+  
   //string filename = string("output/") +  input_str + string(".fst");
   // FIXME: use StdVectorFst::FstToString() here and wrap with HfstInputStream(std::istringstream) in Cython
   string filename = std::tmpnam(NULL);
@@ -248,7 +275,7 @@ std::unique_ptr<SVF> Composition::compose_and_search(SVF *input_transducer,
 
   std::unique_ptr<SVF> composed = eager_compose(input_transducer);
 
-#ifdef COMPOSITIN_TIMES
+#ifdef COMPOSITION_TIMES
   float compose_time = get_cpu_time();
 #endif
 
@@ -262,7 +289,7 @@ std::unique_ptr<SVF> Composition::compose_and_search(SVF *input_transducer,
   ShortestPath(*composed, nbest_transducer.get(), &distance, opts);
   composed.reset();
 
-#ifdef COMPOSITIN_TIMES
+#ifdef COMPOSITION_TIMES
   float search_time = get_cpu_time();
   cerr << "Search Time: " << (search_time - compose_time) << endl;
 #endif
@@ -316,7 +343,7 @@ std::unique_ptr<SVF> Composition::compose_and_search(string input_str,
   static const ShortestPathOptions<StdArc, NaturalShortestFirstQueue<StdArc::StateId, StdArc::Weight>, AnyArcFilter<StdArc>>
     opts(&state_queue, arc_filter, nshortest, unique, false, kDelta, first_path, weight_threshold, state_threshold);
 
-#ifdef COMPOSITIN_TIMES
+#ifdef COMPOSITION_TIMES
   float time_started = get_cpu_time();
 #endif
 
@@ -324,7 +351,7 @@ std::unique_ptr<SVF> Composition::compose_and_search(string input_str,
 
     std::unique_ptr<StdComposeFst> composed = lazy_compose(input_str);
 
-#ifdef COMPOSITIN_TIMES
+#ifdef COMPOSITION_TIMES
     float compose_time = get_cpu_time();
     cerr << "Compose Time: " << (compose_time-time_started) << endl;
 #endif
@@ -333,7 +360,7 @@ std::unique_ptr<SVF> Composition::compose_and_search(string input_str,
     ShortestPath(*composed, nbest_transducer.get(), &distance, opts);
     composed.reset();
 
-#ifdef COMPOSITIN_TIMES
+#ifdef COMPOSITION_TIMES
     float search_time = get_cpu_time();
     cerr << "Search Time: " << (search_time - compose_time) << endl;
 #endif
@@ -341,7 +368,7 @@ std::unique_ptr<SVF> Composition::compose_and_search(string input_str,
 
     std::unique_ptr<SVF> composed = eager_compose(input_str);
 
-#ifdef COMPOSITIN_TIMES
+#ifdef COMPOSITION_TIMES
     float compose_time = get_cpu_time();
     cerr << "Compose Time: " << (compose_time-time_started) << endl;
 #endif
@@ -358,13 +385,13 @@ std::unique_ptr<SVF> Composition::compose_and_search(string input_str,
     ShortestPath(*composed, nbest_transducer.get(), &distance, opts);
     composed.reset();
 
-#ifdef COMPOSITIN_TIMES
+#ifdef COMPOSITION_TIMES
     float search_time = get_cpu_time();
     cerr << "Search Time: " << (search_time - compose_time) << endl;
 #endif
   }
 
-#ifdef COMPOSITIN_TIMES
+#ifdef COMPOSITION_TIMES
   /*
   if (getrusage(RUSAGE_SELF, &this->usage) < 0) {
     std::perror("cannot get usage statistics");
@@ -391,16 +418,19 @@ std::unique_ptr<StdComposeFst> Composition::lazy_compose(string input_str) {
   SVF *input2 = this->lexicon_transducer;
   SVF *input3 = this->morphology_transducer;
 
-#ifdef COMPOSITIN_TIMES
+#ifdef COMPOSITION_TIMES
   float time_started = get_cpu_time();
 #endif
     
-  const SymbolTable table = *(input1->OutputSymbols());
-    
   std::unique_ptr<SVF> input_transducer = create_input_transducer(input_str);
+
+#ifdef VERIFY_TRANSDUCERS
+  if (!Verify(*input_transducer))
+    throw std::runtime_error("input transducer is bad");
+#endif
   ArcSort(input_transducer.get(), StdOLabelCompare()); // really necessary on both sides?
 
-#ifdef COMPOSITIN_TIMES
+#ifdef COMPOSITION_TIMES
   float time_created = get_cpu_time();
   cerr << "Create Time: " << (time_created-time_started) << endl;
 #endif
@@ -425,21 +455,34 @@ std::unique_ptr<StdComposeFst> Composition::lazy_compose(string input_str) {
   //delayed_result2 = new ComposeFst<StdArc>(input_transducer, (input3 ? *delayed_result2 : delayed_result), opts);
   delayed_result.reset(new StdComposeFst(*input_transducer, *delayed_result, opts));
     
-#ifdef COMPOSITIN_TIMES
+#ifdef COMPOSITION_TIMES
   float time_composed = get_cpu_time();
   cerr << "Compose Time: " << (time_composed - time_created) << endl;
 #endif
 
+#if 0  
+  // remove epsilon-epsilon transitions:
+  RmEpsilon(delayed_result.get());
+    
+  // connect (make coaccessible) not necessary as included by RmEpsilon already:
+  // Connect(delayed_result.get());
+
+  if (this->weight_mapper) {
   /* FIXME does not work -- maybe we need a delayed backoff variant?
      so the caller must do backoff herself (union with reweighted input, rmepsilon, determinize)!
-  std::unique_ptr<SVF> output_transducer = backoff_result(input_transducer.get(), delayed_result.get());
-  input_transducer.reset();
-  delayed_result.reset();
-  
-  return std::move(output_transducer);
   */
+    std::unique_ptr<SVF> output_transducer = backoff_result(input_transducer.get(), delayed_result.get());
+    input_transducer.reset();
+    delayed_result.reset();
+  
+    return std::move(output_transducer);
+  } else
+#endif
+    {
+    input_transducer.reset();
 
-  return std::move(delayed_result);
+    return std::move(delayed_result);
+  }
 }
 
 
@@ -451,13 +494,17 @@ std::unique_ptr<SVF> Composition::eager_compose(SVF *input_transducer) {
   SVF *input2 = this->lexicon_transducer;
   SVF *input3 = this->morphology_transducer;
 
-#ifdef COMPOSITIN_TIMES
+#ifdef COMPOSITION_TIMES
   float time_started = get_cpu_time();
 #endif
-    
+
+#ifdef VERIFY_TRANSDUCERS
+  if (!Verify(*input_transducer))
+    throw std::runtime_error("input transducer is bad");
+#endif
   ArcSort(input_transducer, StdOLabelCompare()); // really necessary on both sides?
 
-#ifdef COMPOSITIN_TIMES
+#ifdef COMPOSITION_TIMES
   float time_created = get_cpu_time();
   cerr << "Create Time: " << (time_created-time_started) << endl;
 #endif
@@ -476,16 +523,25 @@ std::unique_ptr<SVF> Composition::eager_compose(SVF *input_transducer) {
     Compose(*result, *input3, result.get());
   }
 
-#ifdef COMPOSITIN_TIMES
+#ifdef COMPOSITION_TIMES
   float time_composed = get_cpu_time();
   cerr << "Compose Time: " << (time_composed - time_created) << endl;
 #endif
-  
-  std::unique_ptr<SVF> output_transducer = backoff_result(input_transducer, result.get());
-  result.reset();
 
-  return std::move(output_transducer);
+  // remove epsilon-epsilon transitions:
+  RmEpsilon(result.get());
+    
+  // connect (make coaccessible) not necessary as included by RmEpsilon already:
+  // Connect(result.get());
 
+  if (this->weight_mapper) {
+    std::unique_ptr<SVF> output_transducer = backoff_result(input_transducer, result.get());
+    result.reset();
+    
+    return std::move(output_transducer);
+  } else {
+    return std::move(result);
+  }
 }
 
 
@@ -499,16 +555,18 @@ std::unique_ptr<SVF> Composition::eager_compose(string input_str) {
   SVF *input2 = this->lexicon_transducer;
   SVF *input3 = this->morphology_transducer;
 
-#ifdef COMPOSITIN_TIMES
+#ifdef COMPOSITION_TIMES
   float time_started = get_cpu_time();
 #endif
     
-  const SymbolTable table = *(input1->OutputSymbols());
-    
   std::unique_ptr<SVF> input_transducer = create_input_transducer(input_str);
+#ifdef VERIFY_TRANSDUCERS
+  if (!Verify(*input_transducer))
+    throw std::runtime_error("input transducer is bad");
+#endif
   ArcSort(input_transducer.get(), StdOLabelCompare()); // really necessary on both sides?
     
-#ifdef COMPOSITIN_TIMES
+#ifdef COMPOSITION_TIMES
   float time_created = get_cpu_time();
   cerr << "Create Time: " << (time_created-time_started) << endl;
 #endif
@@ -519,31 +577,57 @@ std::unique_ptr<SVF> Composition::eager_compose(string input_str) {
 
   Compose(*input_transducer, *input1, result.get());
 
+#ifdef COMPOSITION_TIMES
+  float time_composed1 = get_cpu_time();
+  cerr << "Compose1 Time: " << (time_composed1 - time_created) << endl;
+#endif
+
   if (input2) {
     //ArcSort(result, StdOLabelCompare());
     Compose(*result, *input2, result.get());
   }
+
+#ifdef COMPOSITION_TIMES
+  float time_composed2 = get_cpu_time();
+  cerr << "Compose2 Time: " << (time_composed2 - time_composed1) << endl;
+#endif
 
   if (input3) {
     //ArcSort(result, StdOLabelCompare());
     Compose(*result, *input3, result.get());
   }
 
-#ifdef COMPOSITIN_TIMES
+#ifdef COMPOSITION_TIMES
+  float time_composed3 = get_cpu_time();
+  cerr << "Compose3 Time: " << (time_composed3 - time_composed2) << endl;
+#endif
+
+#ifdef COMPOSITION_TIMES
   float time_composed = get_cpu_time();
   cerr << "Compose Time: " << (time_composed - time_created) << endl;
 #endif
 
-  std::unique_ptr<SVF> output_transducer = backoff_result(input_transducer.get(), result.get());
-  input_transducer.reset();
-  result.reset();
+  // remove epsilon-epsilon transitions:
+  RmEpsilon(result.get());
+    
+  // connect (make coaccessible) not necessary as included by RmEpsilon already:
+  // Connect(result.get());
+
+  if (this->weight_mapper) {
+    std::unique_ptr<SVF> output_transducer = backoff_result(input_transducer.get(), result.get());
+    input_transducer.reset();
+    result.reset();
   
-  return std::move(output_transducer);
+    return std::move(output_transducer);
+  } else {
+    input_transducer.reset();
+    return std::move(result);
+  }
 }
 
 std::unique_ptr<SVF> Composition::backoff_result(SVF *input_transducer, SVF *output_transducer) {
 
-#ifdef COMPOSITIN_TIMES
+#ifdef COMPOSITION_TIMES
   float time_started = get_cpu_time();
 #endif
   
@@ -556,16 +640,11 @@ std::unique_ptr<SVF> Composition::backoff_result(SVF *input_transducer, SVF *out
   // disjoin result with input (acts as a rejection threshold):
   Union(output_transducer, *input_transducer); // faster in that direction
 
-#ifdef COMPOSITIN_TIMES
+#ifdef COMPOSITION_TIMES
   float time_backoff = get_cpu_time();
   cerr << "Backoff Time: " << (time_backoff - time_started) << endl;
 #endif
   
-  // remove epsilon-epsilon transitions:
-  RmEpsilon(output_transducer);
-    
-  // connect (make coaccessible) not necessary as included by RmEpsilon already: Connect(&delayed_result3);
-
   // disambiguate?
 
   // determinize and prune (in preparation of nbest search):
@@ -575,9 +654,9 @@ std::unique_ptr<SVF> Composition::backoff_result(SVF *input_transducer, SVF *out
   Determinize(*output_transducer, result.get(), DeterminizeOptions<StdArc>(DETERMINIZE_DISAMBIGUATE));
   Decode(result.get(), codec);
     
-#ifdef COMPOSITIN_TIMES
+#ifdef COMPOSITION_TIMES
   float time_determinized = get_cpu_time();
-  cerr << "Determinize Time: " << (time_determinized - time_composed) << endl;
+  cerr << "Determinize Time: " << (time_determinized - time_backoff) << endl;
 #endif
     
   return std::move(result);
@@ -590,6 +669,18 @@ std::unique_ptr<SVF> Composition::backoff_result(SVF *input_transducer, SVF *out
 */
 std::unique_ptr<SVF> Composition::create_input_transducer(string input_str) {
 
+  std::istringstream input_stream(input_str);
+  string token;
+  while (std::getline(input_stream, token, '\n'))
+    if (this->symbol_table->Find(token) < 0) {
+      cerr << "adding previously unknown symbol: " << token << endl;
+      this->symbol_table->AddSymbol(token);
+      this->error_transducer->SetInputSymbols(this->symbol_table);
+      this->error_transducer->SetOutputSymbols(this->symbol_table);
+      this->lexicon_transducer->SetInputSymbols(this->symbol_table);
+      this->lexicon_transducer->SetOutputSymbols(this->symbol_table);
+    }
+  
   std::unique_ptr<SVF> input_transducer = std::make_unique<SVF>();
   //if (not string_compiler(input_str, input_transducer))
   if (not (*string_compiler)(input_str, input_transducer.get()))
