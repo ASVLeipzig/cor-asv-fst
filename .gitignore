@@ -1,0 +1,3 @@
+extensions/build
+extensions/*.so
+*.pyc

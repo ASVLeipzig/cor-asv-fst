@@ -7,7 +7,7 @@ import tempfile
 import multiprocessing as mp
 import hfst
 
-from composition import pyComposition
+from extensions.composition import pyComposition
 import sliding_window as sw
 import helper
 
