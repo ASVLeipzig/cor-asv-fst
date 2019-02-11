@@ -150,7 +150,9 @@ def compose_and_search(input, error_transducer, lexicon_transducer, result_num, 
             #filename = composition.correct_transducer_string(input_transducer...) # not implemented yet
             with tempfile.NamedTemporaryFile(prefix='cor-asv-fst-sw-input') as f:
                 #helper.save_transducer(f.name, input_transducer)
-                write_fst(f.name, input)
+                helper.save_transducer(
+                    f.name, input, hfst_format=False, 
+                    type=hfst.ImplementationType.TROPICAL_OPENFST_TYPE)
                 filename = composition.correct_transducer_file(f.name)
 
         result_fst = helper.load_transducer(filename)
@@ -379,18 +381,6 @@ def merge_states(basic_transducer, state_list, predecessor_dict):
     # update flag_state_dict:
     for state in state_list[1:]:
         state_list.remove(state)
-
-def write_fst(filename, fst):
-    """Write fst to file."""
-
-    #fst = hfst.HfstTransducer(fst)
-
-    out = hfst.HfstOutputStream(filename=filename, hfst_format=False, type=hfst.ImplementationType.TROPICAL_OPENFST_TYPE)
-    out.write(fst)
-    out.flush()
-    out.close()
-
-    return
 
 def next_flag_state(flag_state_dict, start, flag_encoder):
     for i in range(start, flag_encoder.max_input_int):

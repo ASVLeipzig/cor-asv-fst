@@ -4,10 +4,10 @@ from os import listdir
 import os.path
 
 
-def save_transducer(filename, transducer):
+def save_transducer(filename, transducer, **kwargs):
     """Save hfst transducer to filename."""
 
-    ostr = hfst.HfstOutputStream(filename=filename)
+    ostr = hfst.HfstOutputStream(filename=filename, **kwargs)
     ostr.write(transducer)
     ostr.flush()
     ostr.close()

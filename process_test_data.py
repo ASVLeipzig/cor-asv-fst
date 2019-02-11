@@ -22,8 +22,12 @@ def prepare_composition(lexicon_transducer, error_transducer, result_num, reject
     result = None
     with tempfile.NamedTemporaryFile(prefix='cor-asv-fst-sw-error') as error_f:
         with tempfile.NamedTemporaryFile(prefix='cor-asv-fst-sw-lexicon') as lexicon_f:
-            sw.write_fst(error_f.name, error_transducer)
-            sw.write_fst(lexicon_f.name, lexicon_transducer)
+            helper.save_transducer(
+                error_f.name, error_transducer, hfst_format=False,
+                type=hfst.ImplementationType.TROPICAL_OPENFST_TYPE)
+            helper.save_transducer(
+                lexicon_f.name, lexicon_transducer, hfst_format=False,
+                type=hfst.ImplementationType.TROPICAL_OPENFST_TYPE)
             
             result = pyComposition(
                 error_f.name, lexicon_f.name,
