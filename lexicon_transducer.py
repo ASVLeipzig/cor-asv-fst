@@ -167,31 +167,14 @@ def main():
 
     args = parse_arguments()
 
-    # load dta19-reduced data
-    #path = '../dta19-reduced/traindata/'
-    #path = '../dta19-reduced/testdata/'
+    # load training data
     gt_filenames = helper.get_filenames(args.directory, args.gt_suffix)
     gt_data = helper.generate_content(args.directory, gt_filenames)
 
-    # load dta-komplett
-    #dta_file = '../Daten/ngram-model/gesamt_dta.txt'
-    #with open(dta_file) as f:
-    #    gt_dict = list(f)
-
-    # read dta19-reduced data
-    ##frak3_dict = create_dict(path, 'deu-frak3')
-    #fraktur4_dict = create_dict(path, 'Fraktur4')
-    ##foo4_dict = create_dict(path, 'foo4')
-
+    # count frequencies of types
     lexicon = build_lexicon(gt_data)
 
-    #line_id = '05110'
-
-    #print(gt_dict[line_id])
-    #print(frak3_dict[line_id])
-    #print(fraktur4_dict[line_id])
-    #print(foo4_dict[line_id])
-
+    # convert frequencies to log-relative frequencies
     lexicon_transducer = helper.transducer_from_dict(
         helper.convert_to_log_relative_freq(lexicon.words))
     punctuation_transducer = helper.transducer_from_dict(
@@ -205,6 +188,7 @@ def main():
     # thus, they are replaced by any possible number of the according length
     lexicon_transducer.substitute(('1', '1'), get_digit_tuples())
 
+    # save the resulting transducers
     helper.save_transducer('lexicon_transducer_dta.hfst', lexicon_transducer)
     helper.save_transducer('punctuation_transducer_dta.hfst', punctuation_transducer)
     helper.save_transducer('open_bracket_transducer_dta.hfst', open_bracket_transducer)
