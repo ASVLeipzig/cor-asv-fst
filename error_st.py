@@ -9,7 +9,6 @@ from operator import itemgetter
 import tqdm
 
 import sys
-sys.path.append('/disk/projects/ocr-d-asv/cor-asv-fst/hfst/')
 import helper
 
 
@@ -310,7 +309,12 @@ def compile_transducer(mappings, ngr_probs, max_errors=3, max_context=3,
     # - m -- the length of the already processed context
     tr_b = hfst.HfstBasicTransducer()
     alignment_tries = [AlignmentTrie() for i in range(max_context)]
-    for alignment, context_len, weight in align_mappings(mappings):
+    aligned_mappings = align_mappings(mappings)
+    # add flags -- FIXME this is a quick-and-dirty solution!!!
+    aligned_mappings.extend(
+        [((('@N.{}@'.format(chr(c)), '@N.{}@'.format(chr(c))),), 1, 0.0) \
+         for c in range(ord('A'), ord('Z')+1)])
+    for alignment, context_len, weight in aligned_mappings:
         alignment_tries[context_len-1].insert(alignment, weight)
     tr = hfst.epsilon_fst()
     for i in range(max_errors):
@@ -320,6 +324,7 @@ def compile_transducer(mappings, ngr_probs, max_errors=3, max_context=3,
     # raise NotImplementedError()
     # tr.remove_epsilons()
     # tr.push_weights_to_start()
+    tr.invert()
     return tr
 
 
@@ -348,9 +353,26 @@ def parse_arguments():
         help='maximum number of errors the resulting FST can correct '
              '(applicable within one window, i.e. a certain number of words)')
     parser.add_argument(
-        '-o', '--output-file', metavar='FILENAME', type=str,
+        '-o', '--output-file', metavar='FILE', type=str,
         default='error.fst', help='file to store the resulting transducer')
+    parser.add_argument(
+        '-w', '--weights-file', metavar='FILE', type=str,
+        help='file to store the trained weights')
+    parser.add_argument(
+        '-W', '--load-weights-from', metavar='FILE', type=str,
+        help='load weights from FILE instead of training')
+    parser.add_argument(
+        '-N', '--ngrams-file', metavar='FILE', type=str, default='ngrams.txt',
+        help='file to save/load n-grams to/from')
     return parser.parse_args()
+
+
+def load_ngrams(filename):
+    result = []
+    with open(filename) as fp:
+        for line in fp:
+            result.append(line.rstrip())
+    return result
 
 
 def save_ngrams(filename, ngrams):
@@ -361,14 +383,24 @@ def save_ngrams(filename, ngrams):
 
 def main():
     args = parse_arguments()
-    ocr_dict = helper.create_dict(args.directory, args.input_suffix)
-    gt_dict = helper.create_dict(args.directory, args.gt_suffix)
-    training_pairs, ngrams = preprocess_training_data(
-        ocr_dict, gt_dict,
-        max_n=args.max_context, max_ngrams=1000)
-    save_ngrams('ngrams.txt', ngrams)
-    probs, ngr_probs = fit(training_pairs, ngrams, threshold=0.001)
-    np.savez('weights.npz', probs=probs, ngr_probs=ngr_probs)
+
+    # if weight file given -> load weights from there, otherwise train them
+    ngrams, probs, ngr_probs = None, None, None
+    if args.load_weights_from is not None:
+        ngrams = load_ngrams(args.ngrams_file)
+        with np.load(args.load_weights_from) as data:
+            probs, ngr_probs = data['probs'], data['ngr_probs']
+    else:
+        ocr_dict = helper.create_dict(args.directory, args.input_suffix)
+        gt_dict = helper.create_dict(args.directory, args.gt_suffix)
+        training_pairs, ngrams = preprocess_training_data(
+            ocr_dict, gt_dict,
+            max_n=args.max_context, max_ngrams=1000)
+        save_ngrams(args.ngrams_file, ngrams)
+        probs, ngr_probs = fit(training_pairs, ngrams, threshold=0.001)
+        if args.weights_file is not None:
+            np.savez(args.weights_file, probs=probs, ngr_probs=ngr_probs)
+
     mappings = matrix_to_mappings(probs, ngrams, weight_threshold=5)
     for alignment, context_len, weight in align_mappings(mappings):
         print(alignment, context_len, weight)
