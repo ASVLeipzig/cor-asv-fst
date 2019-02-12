@@ -231,11 +231,11 @@ def align_mappings(mappings):
     
     # convert tuples like ('abc', 'def', 1.3)
     # to ((('a', 'd'), ('b', 'e'), ('c', 'f')), 3, 1.3)
-    # (the number "3" here is len(y) -- the length of the used context)
+    # (the number "3" here is len(x) -- the length of the used context)
     # insert epsilons where necessary
     result = []
     for x, y, weight in mappings:
-        result.append((_align(x, y), len(y), weight))
+        result.append((_align(x, y), len(x), weight))
     return result
 
 
@@ -243,6 +243,7 @@ def compile_transducer(mappings, ngr_probs, max_errors=3, max_context=3,
                        weight_threshold=5.0):
     '''Convert the trained probability matrix to a transducer.'''
     ngr_weights = -np.log(ngr_probs)
+    print(ngr_weights)
 
     class AlignmentTrie:
         def __init__(self):
@@ -315,7 +316,8 @@ def compile_transducer(mappings, ngr_probs, max_errors=3, max_context=3,
         [((('@N.{}@'.format(chr(c)), '@N.{}@'.format(chr(c))),), 1, 0.0) \
          for c in range(ord('A'), ord('Z')+1)])
     for alignment, context_len, weight in aligned_mappings:
-        alignment_tries[context_len-1].insert(alignment, weight)
+        if context_len <= max_context:
+            alignment_tries[context_len-1].insert(alignment, weight)
     tr = hfst.epsilon_fst()
     for i in range(max_errors):
         tr.concatenate(_convert_tries_to_single_error_tr(alignment_tries))
@@ -371,7 +373,7 @@ def load_ngrams(filename):
     result = []
     with open(filename) as fp:
         for line in fp:
-            result.append(line.rstrip())
+            result.append(line.replace('\n', '')) #.replace(' ', '~'))
     return result
 
 
@@ -401,12 +403,14 @@ def main():
         if args.weights_file is not None:
             np.savez(args.weights_file, probs=probs, ngr_probs=ngr_probs)
 
-    mappings = matrix_to_mappings(probs, ngrams, weight_threshold=5)
-    for alignment, context_len, weight in align_mappings(mappings):
-        print(alignment, context_len, weight)
+    mappings = matrix_to_mappings(probs, ngrams, weight_threshold=10)
+    for input_str, output_str, weight in mappings:
+        print('\''+input_str+'\'', '\''+output_str+'\'', weight, sep='\t')
+    # for alignment, context_len, weight in align_mappings(mappings):
+    #     print(alignment, context_len, weight)
     tr = compile_transducer(
         mappings, ngr_probs, max_errors=args.max_errors,
-        max_context=args.max_context, weight_threshold=5)
+        max_context=args.max_context, weight_threshold=10)
     tr.write_to_file(args.output_file)
 
 

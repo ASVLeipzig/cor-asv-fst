@@ -44,7 +44,8 @@ def prepare_model(punctuation_method, **kwargs):
     }
     if punctuation_method == 'bracket':
         transducers['error'] = helper.load_transducer(
-            'fst/max_error_3_context_23.hfst')
+            'fst/error.hfst')
+            # 'fst/max_error_3_context_23.hfst')
         transducers['punctuation'] = helper.load_transducer(
             'fst/punctuation_transducer_dta.hfst')
         transducers['open_bracket'] = helper.load_transducer(
@@ -60,7 +61,7 @@ def prepare_model(punctuation_method, **kwargs):
             'fst/right_punctuation.hfst')
     elif punctuation_method == 'preserve':
         transducers['error'] = helper.load_transducer(
-            'fst/preserve_punctuation_max_error_3_context_23.hfst')
+            'fst/error.hfst')
         transducers['punctuation'] = helper.load_transducer(
             'fst/any_punctuation_no_space.hfst')
 
