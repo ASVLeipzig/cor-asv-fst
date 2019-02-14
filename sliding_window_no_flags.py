@@ -39,7 +39,6 @@ def process_window_with_openfst(input_str, window_fst, model, rejection_weight=1
     Compose a window input automaton with the model using OpenFST
     composition (lazy composition of error .o. lexicon).
     '''
-    # FIXME currently doesn't work (the composition returns garbage)
     t1 = time.time()
     result_fst = None
     with tempfile.NamedTemporaryFile(prefix='cor-asv-fst-sw-input') as f:
