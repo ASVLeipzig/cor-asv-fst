@@ -31,7 +31,7 @@ Composition::Composition(const string &error_file, const string &lexicon_file, i
     this->symbol_table = MergeSymbolTable(output_symbols, input_symbols, &relabel);
 
     if (relabel) {
-      Relabel(lexicon_transducer, this->symbol_table, NULL);
+      Relabel(lexicon_transducer, this->symbol_table, this->symbol_table);
     }
 
     lexicon_transducer->SetOutputSymbols(this->symbol_table);

@@ -33,7 +33,7 @@ def build_model(use_composition=False):
     else:
         return (error_tr, window_acceptor)
 
-model = build_model(use_composition=False)
+model = build_model(use_composition=True)
 
 # logging.basicConfig(level=logging.DEBUG)
 logging.basicConfig(level=logging.INFO)

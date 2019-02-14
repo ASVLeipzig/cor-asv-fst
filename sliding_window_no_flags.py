@@ -1,5 +1,4 @@
 # TODO:
-# - fix OpenFST composition
 # - try processing with HFST optimized lookup?
 # - refactoring (esp. recombine_windows()) and code cleaning
 
