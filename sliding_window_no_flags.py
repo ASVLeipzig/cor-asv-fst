@@ -10,10 +10,11 @@ import time
 
 import helper
 from extensions.composition import pyComposition
+from sliding_window import lexicon_add_compounds, amend_lexicon_transducer
 
 
 def _print_paths(paths):
-    paths_lst = [(output_str, weight) \
+    paths_lst = [(output_str.replace(hfst.EPSILON, ''), weight) \
                  for input_str, outputs in paths.items() \
                  for output_str, weight in outputs]
     paths_lst.sort(key=itemgetter(1))
@@ -34,7 +35,7 @@ def create_window(tokens):
     return hfst.fst(' '.join(tokens))
 
 
-def process_window_with_openfst(input_str, window_fst, model, rejection_weight=100):
+def process_window_with_openfst(input_str, window_fst, model, rejection_weight=10):
     '''
     Compose a window input automaton with the model using OpenFST
     composition (lazy composition of error .o. lexicon).
@@ -52,7 +53,7 @@ def process_window_with_openfst(input_str, window_fst, model, rejection_weight=1
     return result_fst
 
 
-def process_window_with_hfst(input_str, window_fst, model, n=10, rejection_weight=100):
+def process_window_with_hfst(input_str, window_fst, model, n=10, rejection_weight=10):
     '''
     Compose a window input automaton with the model using HFST
     composition.
@@ -74,7 +75,7 @@ def process_window_with_hfst(input_str, window_fst, model, n=10, rejection_weigh
     return window_fst
 
 
-def process_window(input_str, window_fst, model, rejection_weight=100):
+def process_window(input_str, window_fst, model, rejection_weight=10):
     '''Compose a window input automaton with the model.'''
     if isinstance(model, pyComposition):
         return process_window_with_openfst(input_str, window_fst, model, rejection_weight)
@@ -169,7 +170,7 @@ def recombine_windows(window_fsts):
     return result
 
 
-def process_string(string, model, max_window_size=2):
+def process_string(string, model, max_window_size=2, rejection_weight=10):
     # create windows from the input string
     windows = {}
     tokens = split_input_string(string)
@@ -178,10 +179,91 @@ def process_string(string, model, max_window_size=2):
             windows[(i,j)] = create_window(tokens[i:i+j])
     # compose each window with the model
     for (i, j) in windows:
-        windows[(i,j)] = process_window(' '.join(tokens[i:i+j]), windows[(i,j)], model)
+        windows[(i,j)] = process_window(
+            ' '.join(tokens[i:i+j]),
+            windows[(i,j)], model,
+            rejection_weight=rejection_weight)
         logging.debug('Processing window ({}, {})'.format(i, j))
-        _print_paths(windows[(i,j)].extract_shortest_paths())
+        _print_paths(windows[(i,j)].extract_paths())
     # recombine the windows
     final_fst = recombine_windows(windows)
     return final_fst
+
+
+#############################################################################
+# Model-building functions (FIXME simplify, move the transducer-changing
+# functionality to the lexicon training module)
+#############################################################################
+
+
+def single_token_to_window_acceptor(single_token_acceptor, space_tr):
+    result = single_token_acceptor.copy()
+    result.concatenate(space_tr)
+    result.repeat_star()
+    result.concatenate(single_token_acceptor)
+    return result
+
+
+def build_single_token_acceptor_bracket(
+            lexicon_transducer,
+            punctuation_transducer,
+            open_bracket_transducer,
+            close_bracket_transducer):
+
+    punctuation_transducer.optionalize()
+    open_bracket_transducer.optionalize()
+    close_bracket_transducer.optionalize()
+
+    result = hfst.epsilon_fst()
+    result.concatenate(open_bracket_transducer)
+    result.concatenate(lexicon_transducer)
+    result.concatenate(punctuation_transducer)
+    result.concatenate(close_bracket_transducer)
+    return result
+
+
+def build_single_token_acceptor(transducers, punctuation_method):
+
+    def _require_transducers(tr_names):
+        for tr_name in tr_names:
+            assert tr_name in transducers and \
+                   isinstance(transducers[tr_name], hfst.HfstTransducer)
+
+    if punctuation_method == 'bracket':
+        _require_transducers(
+            ['lexicon', 'punctuation', 'open_bracket', 'close_bracket'])
+        return build_single_token_acceptor_bracket(
+            transducers['lexicon'],
+            transducers['punctuation'],
+            transducers['open_bracket'],
+            transducers['close_bracket'])
+    else:
+        raise RuntimeError('Unsupported punctuation method: {}'\
+                           .format(punctuation_method))
+
+
+def build_model(transducers,
+    punctuation_method='bracket',
+    composition_depth=1,
+    words_per_window=3):
+    """
+    Builds a model for the sliding window algorithm:
+    - amends the lexicon transducer: adds compounding, morphology and
+      historical umlauts;
+    - converts the lexicon transducer into a transducer accepting windows of 
+      at most `words_per_window` words, with punctuation in between.
+    """
+
+    amend_lexicon_transducer(
+        transducers['lexicon'],
+        transducers['morphology'] if 'morphology' in transducers else None,
+        composition_depth)
+
+    space_tr = hfst.fst(' ')
+    single_token_acceptor = build_single_token_acceptor(
+        transducers, punctuation_method=punctuation_method)
+    window_acceptor = single_token_to_window_acceptor(
+        single_token_acceptor, space_tr)
+
+    return transducers['error'], window_acceptor
 

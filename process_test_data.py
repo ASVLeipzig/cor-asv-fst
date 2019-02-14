@@ -8,7 +8,7 @@ import multiprocessing as mp
 import hfst
 
 from extensions.composition import pyComposition
-import sliding_window as sw
+import sliding_window_no_flags as sw
 import helper
 
 # globals (for painless cow-semantic shared memory fork-based multiprocessing)
@@ -36,10 +36,11 @@ def prepare_composition(lexicon_transducer, error_transducer, result_num, reject
 
 
 def prepare_model(punctuation_method, **kwargs):
-    result = { 'flag_encoder' : sw.FlagEncoder() }
+    # result = { 'flag_encoder' : sw.FlagEncoder() }
+    result = {}
 
     transducers = {
-        'flag_encoder' : result['flag_encoder'],
+        # 'flag_encoder' : result['flag_encoder'],
         'lexicon' : helper.load_transducer('fst/lexicon_transducer_dta.hfst')
     }
     if punctuation_method == 'bracket':
@@ -92,7 +93,7 @@ def correct_string(basename, input_str):
         output_tr.input_project()
 
     def _save_output_str(output_str, i):
-        if sw.REJECTION_WEIGHT < 0: # for ROC evaluation: multiple output files
+        if gl_config['rejection_weight'] < 0: # for ROC evaluation: multiple output files
             suffix = gl_config['output_suffix'] + "." + "rw_" + str(i)
         else:
             suffix = gl_config['output_suffix']
@@ -102,33 +103,38 @@ def correct_string(basename, input_str):
             f.write(output_str)
 
     def _output_tr_to_string(tr):
-        paths = hfst.HfstTransducer(tr).extract_paths(
-            max_number=1, max_cycles=0)
+        paths = hfst.HfstTransducer(tr).extract_shortest_paths()
         return list(paths.items())[0][1][0][0]\
                     .replace(hfst.EPSILON, '')              # really necessary?
     
     logging.debug('input_str:  %s', input_str)
+    lattice = sw.process_string(
+        input_str, model['composition'],
+        rejection_weight=gl_config['rejection_weight'])
+    output_str = _output_tr_to_string(lattice)
+    _save_output_str(output_str, 0)
+    logging.debug('output_str: %s', output_str)
 
-    try:
-        complete_outputs = sw.window_size_1_2(
-            input_str, None, None, model['flag_encoder'],
-            gl_config['result_num'], model['composition'])
+    # try:
+    #     complete_outputs = sw.window_size_1_2(
+    #         input_str, None, None, model['flag_encoder'],
+    #         gl_config['result_num'], model['composition'])
         
-        for i, complete_output in enumerate(complete_outputs):
-            if not gl_config['apply_lm']:
-                complete_output.n_best(1)
+    #     for i, complete_output in enumerate(complete_outputs):
+    #         if not gl_config['apply_lm']:
+    #             complete_output.n_best(1)
 
-            complete_output = sw.remove_flags(
-                complete_output, model['flag_encoder'])
-            if gl_config['apply_lm']:
-                _apply_lm(complete_output)
-            output_str = _output_tr_to_string(complete_output)
-            _save_output_str(output_str, i)
-            logging.debug('output_str: %s', output_str)
+    #         complete_output = sw.remove_flags(
+    #             complete_output, model['flag_encoder'])
+    #         if gl_config['apply_lm']:
+    #             _apply_lm(complete_output)
+    #         output_str = _output_tr_to_string(complete_output)
+    #         _save_output_str(output_str, i)
+    #         logging.debug('output_str: %s', output_str)
 
-    except Exception as e:
-        logging.exception('exception for window result of "%s"' % input_str)
-        raise e
+    # except Exception as e:
+    #     logging.exception('exception for window result of "%s"' % input_str)
+    #     raise e
     
     return basename, input_str, output_str
 
@@ -217,8 +223,8 @@ def main():
         'apply_lm' : args.apply_lm,
         'output_suffix' : args.output_suffix,
         'directory' : args.directory,
+        'rejection_weight' : args.rejection_weight,
     }
-    sw.REJECTION_WEIGHT = args.rejection_weight
     
     # load all transducers and build a model out of them
     model = prepare_model(

@@ -6,8 +6,11 @@ from operator import itemgetter
 from process_test_data import prepare_composition
 import sliding_window_no_flags as sw
 
+REJECTION_WEIGHT = 3
+
 def build_model(use_composition=False):
-    error_tr = helper.load_transducer('fst/error.hfst')
+    # error_tr = helper.load_transducer('fst/error.hfst')
+    error_tr = helper.load_transducer('fst/error_st.fst')
     lexicon_tr = helper.load_transducer('fst/lexicon_transducer_dta.hfst')
     punctuation_tr = helper.load_transducer('fst/punctuation_transducer_dta.hfst')
     open_bracket_tr = helper.load_transducer('fst/open_bracket_transducer_dta.hfst')
@@ -29,7 +32,7 @@ def build_model(use_composition=False):
     window_acceptor.concatenate(single_token_acceptor)
 
     if use_composition:
-        return prepare_composition(window_acceptor, error_tr, 10, 100)
+        return prepare_composition(window_acceptor, error_tr, 10, REJECTION_WEIGHT)
     else:
         return (error_tr, window_acceptor)
 
@@ -38,34 +41,20 @@ model = build_model(use_composition=True)
 # logging.basicConfig(level=logging.DEBUG)
 logging.basicConfig(level=logging.INFO)
 
-def p(string):
+def p(string, max_results=1):
     global lexicon_fst, error_fst
     global composition
     print(string)
-    tr = sw.process_string(string, model, max_window_size=2)
-    for input_str, outputs in tr.extract_shortest_paths().items():
+    tr = sw.process_string(string, model, max_window_size=2, rejection_weight=REJECTION_WEIGHT)
+    tr.n_best(max_results)
+    paths = []
+    for input_str, outputs in tr.extract_paths().items():
         for output_str, weight in outputs:
-            print(output_str, weight, sep='\t')
+            paths.append((output_str, weight))
+    for p in sorted(paths, key=itemgetter(1)):
+        print(*p, sep='\t')
     print()
 
-p('Philo ophenvon Fndien dur<h Grieche nland bls')
-p('„Aber Kind! Du redeſt ja ſchon den reinen Wahn-')
-p('\ opf. Mir wurde plöblich fo klar, — jo ganz klar, daß')
-p('ih denke. Aber was die ſelige Frau Geheimräth1n')
-p('„Das fann ich niht, c’esl absolument impos-')
-p('rend. In dem Augenbli> war 1hr niht wohl zu')
-p('ür die fle ſich ſchlugen.“')
-p('ſollte. Nur Über die Familien, wo man ſie einführen')
-p('an der Hand führten <')
-p('1 S2')
-p('rath und ging auf und ab. Damit iſ es vorbei.')
-p('erſhro>en haben, da ſoll Sie auch keine Seele finden.')
-p('Cavalier.')
-p('„Nuch ein Gru d, jetine Heimat zu verehren !“ be-')
-p('— Limonade? — Knöpfen Sie den Pelz ein wenig')
-p('vor dem Schuß, den er micht in den Rücken erhalten')
-p('Sie aber ſah ihn mit demſelben ſtreigen Blick an, wie')
-p('nein, bewahre! ſie hat ſozuſagen die Tendenz zur Che. “')
-p('Ueberzeugung heraus ſprach ih. Glaube mir, ihr wollt')
-p('„Man ſoll niht verlobt ſein“ meinte Gabriele')
-p('Benno warf ihr durch ſeine Brille einen for)chenden')
+p('nem Makulaturbogen cinen Drukfehler mit Blei-')
+p('daß Chen, die frúh gei<ſofſen wurden, anm')
+p('Centauren, thre pelasgiſchen Kabiren verrathen uns')
