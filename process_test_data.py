@@ -41,7 +41,7 @@ def prepare_model(punctuation_method, **kwargs):
 
     transducers = {
         # 'flag_encoder' : result['flag_encoder'],
-        'lexicon' : helper.load_transducer('fst/lexicon_transducer_dta.hfst')
+        'lexicon' : helper.load_transducer('fst/lexicon.hfst')
     }
     if punctuation_method == 'bracket':
         transducers['error'] = helper.load_transducer(
