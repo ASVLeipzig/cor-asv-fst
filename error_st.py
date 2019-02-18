@@ -366,6 +366,9 @@ def parse_arguments():
     parser.add_argument(
         '-N', '--ngrams-file', metavar='FILE', type=str, default='ngrams.txt',
         help='file to save/load n-grams to/from')
+    parser.add_argument(
+        '-t', '--weight-threshold', metavar='VAL', type=float, default=5.0,
+        help='discard transitions with weight higher than VAL')
     return parser.parse_args()
 
 
@@ -403,14 +406,15 @@ def main():
         if args.weights_file is not None:
             np.savez(args.weights_file, probs=probs, ngr_probs=ngr_probs)
 
-    mappings = matrix_to_mappings(probs, ngrams, weight_threshold=10)
+    mappings = matrix_to_mappings(
+        probs, ngrams, weight_threshold=args.weight_threshold)
     for input_str, output_str, weight in mappings:
         print('\''+input_str+'\'', '\''+output_str+'\'', weight, sep='\t')
     # for alignment, context_len, weight in align_mappings(mappings):
     #     print(alignment, context_len, weight)
     tr = compile_transducer(
         mappings, ngr_probs, max_errors=args.max_errors,
-        max_context=args.max_context, weight_threshold=10)
+        max_context=args.max_context, weight_threshold=args.weight_threshold)
     tr.write_to_file(args.output_file)
 
 
