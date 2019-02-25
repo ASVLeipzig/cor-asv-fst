@@ -1,3 +1,6 @@
-extensions/build
-extensions/*.so
+lib/extensions/build
+lib/extensions/*.so
 *.pyc
+*~
+*.egg-info
+__pycache__
