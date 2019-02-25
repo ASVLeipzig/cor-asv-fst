@@ -364,6 +364,9 @@ def parse_arguments():
         '-W', '--load-weights-from', metavar='FILE', type=str,
         help='load weights from FILE instead of training')
     parser.add_argument(
+        '-n', '--max-ngrams', metavar='NUM', type=str, default=1000,
+        help='maximum number of n-grams')
+    parser.add_argument(
         '-N', '--ngrams-file', metavar='FILE', type=str, default='ngrams.txt',
         help='file to save/load n-grams to/from')
     parser.add_argument(
