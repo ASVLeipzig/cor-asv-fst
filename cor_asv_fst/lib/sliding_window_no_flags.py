@@ -8,9 +8,9 @@ from operator import itemgetter
 import tempfile
 import time
 
-import helper
-from extensions.composition import pyComposition
-from sliding_window import lexicon_add_compounds, amend_lexicon_transducer
+from .helper import load_transducer, save_transducer
+from .extensions.composition import pyComposition
+from .sliding_window import lexicon_add_compounds, amend_lexicon_transducer
 
 
 def _print_paths(paths):
@@ -43,11 +43,11 @@ def process_window_with_openfst(input_str, window_fst, model, rejection_weight=1
     t1 = time.time()
     result_fst = None
     with tempfile.NamedTemporaryFile(prefix='cor-asv-fst-sw-input') as f:
-        helper.save_transducer(
+        save_transducer(
             f.name, window_fst, hfst_format=False, 
             type=hfst.ImplementationType.TROPICAL_OPENFST_TYPE)
         filename = model.correct_transducer_file(f.name)
-    result_fst = helper.load_transducer(filename)
+    result_fst = load_transducer(filename)
     t2 = time.time()
     logging.debug('Processing time: {}s'.format(t2-t1))
     return result_fst

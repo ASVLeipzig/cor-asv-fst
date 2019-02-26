@@ -1,6 +1,9 @@
-lib/extensions/build
-lib/extensions/*.so
+build/
+dist/
+cor_asv_fst/lib/extensions/build
+cor_asv_fst/lib/extensions/*.so
 *.pyc
 *~
 *.egg-info
 __pycache__
+.*.swp
