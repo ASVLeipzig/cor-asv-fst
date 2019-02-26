@@ -21,7 +21,7 @@ setup(
     name='cor_asv_fst',
     version='0.1.0',
     description='OCR post-correction with error/lexicon Finite State '
-                'Transducers and character-level LSTMs',
+                'Transducers and character-level LSTM language models',
     long_description=README,
     author='Maciej Sumalvico, Robert Sachunsky',
     author_email='sumalvico@informatik.uni-leipzig.de, '
