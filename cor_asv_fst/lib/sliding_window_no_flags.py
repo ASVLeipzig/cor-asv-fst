@@ -267,3 +267,15 @@ def build_model(transducers,
 
     return transducers['error'], window_acceptor
 
+
+##############################################################333
+# The Corrector class
+##############################################################333
+
+class Corrector:
+    def __init__(self, error_fst_file, lexicon_fst_file):
+        pass
+
+    def process_window(self, win_idx, window):
+        return (win_idx, window)
+

@@ -3,16 +3,19 @@ import itertools
 
 from ocrd import Processor, MIMETYPE_PAGE
 from ocrd.validator.page_validator import PageValidator, ConsistencyError
-from ocrd.utils import getLogger, concat_padded, xywh_from_points, points_from_xywh
-from ocrd.model.ocrd_page import from_file, to_xml, GlyphType, CoordsType, TextEquivType
-from ocrd.model.ocrd_page_generateds import MetadataItemType, LabelsType, LabelType
+from ocrd.utils import \
+    getLogger, concat_padded, xywh_from_points, points_from_xywh
+from ocrd.model.ocrd_page import \
+    from_file, to_xml, GlyphType, CoordsType, TextEquivType
+from ocrd.model.ocrd_page_generateds import \
+    MetadataItemType, LabelsType, LabelType
 
 import networkx as nx
 import hfst
 
 from ocrd_keraslm.lib import Rater
 from .config import OCRD_TOOL
-from ..lib.sliding_window import Corrector # ???
+from ..lib.sliding_window_no_flags import Corrector # ???
 
 LOG = getLogger('processor.FSTCorrection')
 MAX_WINDOW_SIZE = 2
@@ -23,27 +26,36 @@ class FSTCorrection(Processor):
         kwargs['ocrd_tool'] = OCRD_TOOL['tools']['ocrd-cor-asv-fst-process']
         kwargs['version'] = OCRD_TOOL['version']
         super(FSTCorrection, self).__init__(*args, **kwargs)
-        if not hasattr(self, 'workspace') or not self.workspace: # no parameter/workspace for --dump-json or --version (no processing)
+        if not hasattr(self, 'workspace') or not self.workspace:
+            # no parameter/workspace for --dump-json or --version (no
+            # processing)
             return
         
         # we need a language model for decoding hypotheses graphs:
         self.rater = Rater(logger=LOG)
         self.rater.load_config(self.parameter['keraslm_file'])
         # overrides for incremental mode necessary before compilation:
-        self.rater.stateful = False # no implicit state transfer
-        self.rater.incremental = True # but explicit state transfer
+        self.rater.stateful = False         # no implicit state transfer
+        self.rater.incremental = True       # but explicit state transfer
         self.rater.configure()
         self.rater.load_weights(self.parameter['keraslm_file'])
         
         # initialisation for FST models goes here...
-        self.corrector = Corrector(self.parameter['errorfst_file'], self.parameter['lexiconfst_file']) # ???
+        self.corrector = Corrector(
+            self.parameter['errorfst_file'],
+            self.parameter['lexiconfst_file']) # ???
     
     def process(self):
-        """Transduce textual annotation into hypotheses graphs for each line, then decode their best paths incrementally, producing output files with FST+LM scores.
-        
-        Read and parse PAGE input files one by one, splitting its lines into windows of 
         """
-        level = self.parameter['textequiv_level'] # word or glyph input (output will always be on word level)
+        Transduce textual annotation into hypotheses graphs for each line, then
+        decode their best paths incrementally, producing output files with
+        FST+LM scores.
+        
+        Read and parse PAGE input files one by one, splitting its lines into
+        windows of 
+        """
+         # word or glyph input (output will always be on word level)
+        level = self.parameter['textequiv_level']
         beam_width = self.parameter['beam_width']
         lm_weight = self.parameter['lm_weight']
         for (n, input_file) in enumerate(self.input_files):
@@ -250,3 +262,4 @@ def _merge_elements_func(toks):
     if any(styles):
         # todo: make a majority vote on each attribute here
         merged.set_TextStyle(elements[0].get_TextStyle())
+
