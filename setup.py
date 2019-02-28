@@ -36,7 +36,7 @@ setup(
         'cython',
         'numpy',
         'hfst',
-        'networkx',
+        'networkx >= 2.0',
         'nltk',
         'spacy',
         'editdistance',

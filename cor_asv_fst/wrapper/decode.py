@@ -1,12 +1,15 @@
 from __future__ import absolute_import
-import itertools
+from itertools import chain
+from functools import reduce
+from math import ceil
+import multiprocessing as mp
 
 from ocrd import Processor, MIMETYPE_PAGE
 from ocrd.validator.page_validator import PageValidator, ConsistencyError
 from ocrd.utils import \
     getLogger, concat_padded, xywh_from_points, points_from_xywh
 from ocrd.model.ocrd_page import \
-    from_file, to_xml, GlyphType, CoordsType, TextEquivType
+    from_file, to_xml, GlyphType, WordType, CoordsType, TextEquivType
 from ocrd.model.ocrd_page_generateds import \
     MetadataItemType, LabelsType, LabelType
 
@@ -15,10 +18,13 @@ import hfst
 
 from ocrd_keraslm.lib import Rater
 from .config import OCRD_TOOL
-from ..lib.sliding_window_no_flags import Corrector # ???
+from ..lib.sliding_window_no_flags import Corrector
 
 LOG = getLogger('processor.FSTCorrection')
 MAX_WINDOW_SIZE = 2
+BEAM_CLUSTERING_ENABLE = True # enable pruning partial paths by history clustering
+BEAM_CLUSTERING_DIST = 5 # maximum distance between state vectors to form a cluster
+MAX_LENGTH = 500 # maximum string length of TextEquiv alternatives (on textequiv_level)
 
 class FSTCorrection(Processor):
     
@@ -43,7 +49,7 @@ class FSTCorrection(Processor):
         # initialisation for FST models goes here...
         self.corrector = Corrector(
             self.parameter['errorfst_file'],
-            self.parameter['lexiconfst_file']) # ???
+            self.parameter['lexiconfst_file'])
     
     def process(self):
         """
@@ -109,8 +115,13 @@ class FSTCorrection(Processor):
             windows = {}
             for i in range(len(tokens)):
                 for j in range(1, min(MAX_WINDOW_SIZE + 1, len(tokens) - i + 1)):
+                    # FIXME: we cannot pass hfst objects directly because multiprocessing.pool cannot pickle them!
+                    #        but hfst does not offer any string serialisation (only AT&T deserialisation and files)
+                    filename = '/tmp/window_%d_%d.hfst' % (i,j)
+                    fst = reduce(_concat_fst_func, tokens[i:i+j], hfst.epsilon_fst())
+                    fst.write_to_file(filename)
                     windows[(i, j)] = (_merge_elements_func(tokens[i:i+j]), # a WordType reference
-                                       reduce(_concat_fst_func, tokens[i:i+j], hfst.empty_fst())) # an FST
+                                       filename) # an FST
             
             # process windows in parallel:
             with mp.Pool() as pool:
@@ -118,7 +129,7 @@ class FSTCorrection(Processor):
                 #   takes a 2-tuple of a 2-tuple (i,j) and a 2-tuple (reference, input FSA),
                 #   reproduces the input structure, only replacing input with output FSA
                 #   (this is necessary to get multiprocessing encapsulate the data)
-                result = pool.starmap_async(self.corrector.process_window, windows.items(), error_callback=LOG.error) # ???
+                result = pool.starmap_async(self.corrector.process_window, windows.items(), error_callback=LOG.error)
                 result.wait()
                 if result.successful():
                     windows = result.get()
@@ -136,15 +147,17 @@ class FSTCorrection(Processor):
             for (i, j), (ref, fst) in windows:
                 start_node = i
                 end_node = i + j
-                # get best paths instead of individual character transitions, 
+                # FIXME pickle/hfst, see above
+                fst = hfst.HfstTransducer.read_from_file('/tmp/window_%d_%d.hfst' % (i,j))
+                # get best paths instead of individual character transitions,
                 # so alternatives can be rated in parallel below
                 # (this assumes that result is acyclic, and n_best() has been run already):
                 paths = fst.extract_shortest_paths().values() # ignore input paths from now on
-                paths = itertools.chain(*paths) # flatten
+                paths = chain(*paths) # flatten
                 graph.add_edge(start_node, end_node, element=ref, 
-                               alternatives=map(lambda path:
-                                                TextEquivType(Unicode=path[0], 
-                                                              conf=pow(2, -path[1])), paths))
+                               alternatives=list(map(lambda path:
+                                                     TextEquivType(Unicode=path[0], 
+                                                                   conf=pow(2, -path[1])), paths)))
             
             # find best path for previous line, advance traceback/beam for current line
             path, entropy, traceback = self.rater.rate_best(graph, line_start_node, line_end_node,
@@ -226,15 +239,39 @@ def _page_get_line_acceptors(level, pcgts):
         first_region = False
     return results
 
+def page_update_higher_textequiv_levels(level, pcgts):
+    '''Update the TextEquivs of all PAGE-XML hierarchy levels above `level` for consistency.
+    
+    Starting with the hierarchy level chosen for processing,
+    join all first TextEquiv (by the rules governing the respective level)
+    into TextEquiv of the next higher level, replacing them.
+    '''
+    regions = pcgts.get_Page().get_TextRegion()
+    if level != 'region':
+        for region in regions:
+            lines = region.get_TextLine()
+            if level != 'line':
+                for line in lines:
+                    words = line.get_Word()
+                    if level != 'word':
+                        for word in words:
+                            glyphs = word.get_Glyph()
+                            word_unicode = u''.join(glyph.get_TextEquiv()[0].Unicode if glyph.get_TextEquiv() else u'' for glyph in glyphs)
+                            word.set_TextEquiv([TextEquivType(Unicode=word_unicode)]) # remove old
+                    line_unicode = u' '.join(word.get_TextEquiv()[0].Unicode if word.get_TextEquiv() else u'' for word in words)
+                    line.set_TextEquiv([TextEquivType(Unicode=line_unicode)]) # remove old
+            region_unicode = u'\n'.join(line.get_TextEquiv()[0].Unicode if line.get_TextEquiv() else u'' for line in lines)
+            region.set_TextEquiv([TextEquivType(Unicode=region_unicode)]) # remove old
+
 def _line_update_from_path(line, path, entropy):
-    line.set_Word(None)
+    line.set_Word([])
     strlen = 0
     for word, textequiv, score in path:
         if word: # not just space
             word.set_TextEquiv([textequiv]) # delete others
             strlen += len(textequiv.Unicode)
             textequiv.set_conf(score)
-            prev_line.add_Word(word)
+            line.add_Word(word)
         else:
             strlen += 1
     ent = entropy/strlen
@@ -249,17 +286,22 @@ def _concat_fst_func(fst, tok):
 
 def _merge_elements_func(toks):
     elements = map(lambda tok: tok[0], toks)
+    if not elements:
+        LOG.error('nothing to merge')
+        return None
     merged = WordType()
     merged.set_id(','.join(map(lambda elem: elem.id, elements)))
     points = ' '.join(map(lambda elem: elem.get_Coords().points, elements))
-    merged.set_Coords(points=points_from_xywh(xywh_from_points(points)))
+    if points:
+        merged.set_Coords(points=points_from_xywh(xywh_from_points(points)))
     # make other attributes and TextStyle a majority vote, 
     # but no Glyph (too fine-grained) or TextEquiv (overwritten from best path anyway)
-    languages = map(lambda elem: elem.get_language(), elements)
-    merged.set_language(max(set(languages), key=languages.count))
+    languages = list(map(lambda elem: elem.get_language(), elements))
+    if languages:
+        merged.set_language(max(set(languages), key=languages.count))
     # todo: other attributes...
     styles = map(lambda elem: elem.get_TextStyle(), elements)
     if any(styles):
         # todo: make a majority vote on each attribute here
         merged.set_TextStyle(elements[0].get_TextStyle())
-
+    return merged
