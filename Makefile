@@ -22,6 +22,12 @@ deps:
 #deps-test:
 #	$(PIP) install -r requirements_test.txt
 
+# Dependencies for deployment in an ubuntu/debian linux
+# we need libstdc++ > 5.0 (for codecvt, std::make_unique etc)
+# deps-ubuntu:
+# 	sudo apt-get install -y \
+# 		libfst-dev
+
 install:
 	$(PIP) install -e .
 

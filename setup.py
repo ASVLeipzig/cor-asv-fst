@@ -6,12 +6,13 @@ Installs:
 import codecs
 
 from setuptools import Extension, setup, find_packages
+from distutils.sysconfig import get_config_vars
+from Cython.Distutils import build_ext
 
-# FIXME restore this!
-# cfg_vars = get_config_vars()
-# for key, value in cfg_vars.items():
-#     if type(value) == str:
-#         cfg_vars[key] = value.replace("-Wstrict-prototypes", "")
+cfg_vars = get_config_vars()
+for key, value in cfg_vars.items():
+    if type(value) == str:
+        cfg_vars[key] = value.replace("-Wstrict-prototypes", "-std=c++11")
 
 
 with codecs.open('README.md', encoding='utf-8') as f:
@@ -21,7 +22,7 @@ setup(
     name='cor_asv_fst',
     version='0.1.0',
     description='OCR post-correction with error/lexicon Finite State '
-                'Transducers and character-level LSTM language models',
+                'Transducers and character-level LSTMs',
     long_description=README,
     author='Maciej Sumalvico, Robert Sachunsky',
     author_email='sumalvico@informatik.uni-leipzig.de, '
@@ -59,4 +60,5 @@ setup(
             libraries=["fst", "dl"],
             language="c++")
         ],
+    cmdclass = {'build_ext': build_ext},
 )
