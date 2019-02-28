@@ -6,5 +6,5 @@ from .decode import FSTCorrection
 
 @click.command()
 @ocrd_cli_options
-def cor_asv_fst(*args, **kwargs):
+def ocrd_cor_asv_fst(*args, **kwargs):
     return ocrd_cli_wrap_processor(FSTCorrection, *args, **kwargs)
