@@ -20,7 +20,7 @@ with codecs.open('README.md', encoding='utf-8') as f:
 
 setup(
     name='ocrd_cor_asv_fst',
-    version='0.1.0',
+    version='0.1.1',
     description='OCR post-correction with error/lexicon Finite State '
                 'Transducers and character-level LSTMs',
     long_description=README,

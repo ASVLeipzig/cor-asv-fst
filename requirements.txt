@@ -8,5 +8,5 @@ alignment
 editdistance
 spacy
 networkx >= 2.0
-ocrd >= 0.15.2
+ocrd >= 1.0.0b4
 ocrd_keraslm >= 0.3.1

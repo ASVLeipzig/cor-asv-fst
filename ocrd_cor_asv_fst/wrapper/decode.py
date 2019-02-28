@@ -4,14 +4,12 @@ from functools import reduce
 from math import ceil
 import multiprocessing as mp
 
-from ocrd import Processor, MIMETYPE_PAGE
-from ocrd.validator.page_validator import PageValidator, ConsistencyError
-from ocrd.utils import \
-    getLogger, concat_padded, xywh_from_points, points_from_xywh
-from ocrd.model.ocrd_page import \
-    from_file, to_xml, GlyphType, WordType, CoordsType, TextEquivType
-from ocrd.model.ocrd_page_generateds import \
-    MetadataItemType, LabelsType, LabelType
+from ocrd import Processor
+from ocrd_validators.page_validator import PageValidator, ConsistencyError
+from ocrd_utils import \
+    getLogger, concat_padded, xywh_from_points, points_from_xywh, MIMETYPE_PAGE
+from ocrd_model.ocrd_page import \
+    from_file, to_xml, GlyphType, WordType, CoordsType, TextEquivType, MetadataItemType, LabelsType, LabelType
 
 import networkx as nx
 import hfst
