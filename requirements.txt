@@ -1,4 +1,5 @@
-cython
+cython >= 0.29.6
+click >= 7.0
 hfst
 nltk
 six
@@ -6,3 +7,6 @@ numpy
 alignment
 editdistance
 spacy
+networkx >= 2.0
+ocrd >= 1.0.0b4
+ocrd_keraslm >= 0.3.1

@@ -12,8 +12,8 @@ import tempfile
 import argparse
 import logging
 
-from composition import pyComposition
-import helper
+from .extensions.composition import pyComposition
+from .helper import save_transducer, load_transducer
 
 REJECTION_WEIGHT = 1.5 # weight assigned to all transitions in input transducer when disjoining with result transducer as fallback (see set_transition_weights); trade-off between over- and under-correction
 
@@ -150,12 +150,12 @@ def compose_and_search(input, error_transducer, lexicon_transducer, result_num, 
             #filename = composition.correct_transducer_string(input_transducer...) # not implemented yet
             with tempfile.NamedTemporaryFile(prefix='cor-asv-fst-sw-input') as f:
                 #helper.save_transducer(f.name, input_transducer)
-                helper.save_transducer(
+                save_transducer(
                     f.name, input, hfst_format=False, 
                     type=hfst.ImplementationType.TROPICAL_OPENFST_TYPE)
                 filename = composition.correct_transducer_file(f.name)
 
-        result_fst = helper.load_transducer(filename)
+        result_fst = load_transducer(filename)
         os.unlink(filename)
 
         global REJECTION_WEIGHT
@@ -1153,8 +1153,8 @@ def main():
     lm_file = 'fst/lang_mod_theta_0_000001.mod.modified.hfst'
     lowercase_file = 'fst/lowercase.hfst'
 
-    lm_fst = helper.load_transducer(lm_file)
-    lowercase_fst = helper.load_transducer(lowercase_file)
+    lm_fst = load_transducer(lm_file)
+    lowercase_fst = load_transducer(lowercase_file)
 
     complete_output.compose(lowercase_fst)
     

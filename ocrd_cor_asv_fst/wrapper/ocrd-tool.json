@@ -1,0 +1,70 @@
+{
+  "git_url": "https://github.com/ASVLeipzig/cor-asv-fst",
+  "version": "0.1.1",
+  "tools": {
+    "ocrd-cor-asv-fst-process": {
+      "executable": "ocrd-cor-asv-fst-process",
+      "categories": [
+        "Text recognition and optimization"
+      ],
+      "steps": [
+        "recognition/post-correction"
+      ],
+      "description": "Improve text annotation by FST error and lexicon model with character-level LSTM language model",
+      "input_file_grp": [
+        "OCR-D-OCR-TESS",
+        "OCR-D-OCR-KRAK",
+        "OCR-D-OCR-OCRO",
+        "OCR-D-OCR-CALA",
+        "OCR-D-OCR-ANY"
+      ],
+      "output_file_grp": [
+        "OCR-D-COR-ASV"
+      ],
+      "parameters": {
+        "keraslm_file": {
+          "type": "string",
+          "format": "uri",
+          "content-type": "application/x-hdf;subtype=bag",
+          "description": "path of h5py weight/config file for language model trained with keraslm",
+          "required": true,
+          "cacheable": true
+        },
+        "errorfst_file": {
+          "type": "string",
+          "format": "uri",
+          "content-type": "application/vnd.openfst",
+          "description": "path of FST file for error model",
+          "required": true,
+          "cacheable": true
+        },
+        "lexiconfst_file": {
+          "type": "string",
+          "format": "uri",
+          "content-type": "application/vnd.openfst",
+          "description": "path of FST file for lexicon model",
+          "required": true,
+          "cacheable": true
+        },
+        "textequiv_level": {
+          "type": "string",
+          "enum": ["word", "glyph"],
+          "default": "glyph",
+          "description": "PAGE XML hierarchy level to read TextEquiv input on (output will always be word level)"
+        },
+        "beam_width": {
+          "type": "number",
+          "format": "integer",
+          "description": "maximum number of best partial paths to consider during beam search in language modelling",
+          "default": 100
+        },
+        "lm_weight": {
+          "type": "number",
+          "format": "float",
+          "description": "share of the LM scores over the FST output confidences",
+          "default": 0.5
+        }
+      }
+    }
+  }
+}
