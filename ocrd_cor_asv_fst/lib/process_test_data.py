@@ -7,9 +7,9 @@ import tempfile
 import multiprocessing as mp
 import hfst
 
-from extensions.composition import pyComposition
-import sliding_window_no_flags as sw
-import helper
+from .extensions.composition import pyComposition
+from .sliding_window_no_flags import build_model, process_string
+from .helper import save_transducer, load_transducer, create_dict
 
 # globals (for painless cow-semantic shared memory fork-based multiprocessing)
 model = {}
@@ -22,10 +22,10 @@ def prepare_composition(lexicon_transducer, error_transducer, result_num, reject
     result = None
     with tempfile.NamedTemporaryFile(prefix='cor-asv-fst-sw-error') as error_f:
         with tempfile.NamedTemporaryFile(prefix='cor-asv-fst-sw-lexicon') as lexicon_f:
-            helper.save_transducer(
+            save_transducer(
                 error_f.name, error_transducer, hfst_format=False,
                 type=hfst.ImplementationType.TROPICAL_OPENFST_TYPE)
-            helper.save_transducer(
+            save_transducer(
                 lexicon_f.name, lexicon_transducer, hfst_format=False,
                 type=hfst.ImplementationType.TROPICAL_OPENFST_TYPE)
             
@@ -41,31 +41,31 @@ def prepare_model(punctuation_method, **kwargs):
 
     transducers = {
         # 'flag_encoder' : result['flag_encoder'],
-        'lexicon' : helper.load_transducer('fst/lexicon.hfst')
+        'lexicon' : load_transducer('fst/lexicon.hfst')
     }
     if punctuation_method == 'bracket':
-        transducers['error'] = helper.load_transducer(
+        transducers['error'] = load_transducer(
             'fst/error.hfst')
-        transducers['punctuation'] = helper.load_transducer(
+        transducers['punctuation'] = load_transducer(
             'fst/punctuation_transducer_dta.hfst')
-        transducers['open_bracket'] = helper.load_transducer(
+        transducers['open_bracket'] = load_transducer(
             'fst/open_bracket_transducer_dta.hfst')
-        transducers['close_bracket'] = helper.load_transducer(
+        transducers['close_bracket'] = load_transducer(
             'fst/close_bracket_transducer_dta.hfst')
     elif punctuation_method == 'lm':
-        transducers['error'] = helper.load_transducer(
+        transducers['error'] = load_transducer(
             'fst/max_error_3_context_23.hfst')
-        transducers['punctuation_left'] = helper.load_transducer(
+        transducers['punctuation_left'] = load_transducer(
             'fst/left_punctuation.hfst')
-        transducers['punctuation_right'] = helper.load_transducer(
+        transducers['punctuation_right'] = load_transducer(
             'fst/right_punctuation.hfst')
     elif punctuation_method == 'preserve':
-        transducers['error'] = helper.load_transducer(
+        transducers['error'] = load_transducer(
             'fst/error.hfst')
-        transducers['punctuation'] = helper.load_transducer(
+        transducers['punctuation'] = load_transducer(
             'fst/any_punctuation_no_space.hfst')
 
-    error_tr, lexicon_tr = sw.build_model(transducers,
+    error_tr, lexicon_tr = build_model(transducers,
         punctuation_method=punctuation_method,
         composition_depth=kwargs['composition_depth'],
         words_per_window=kwargs['words_per_window'])
@@ -73,9 +73,9 @@ def prepare_model(punctuation_method, **kwargs):
         lexicon_tr, error_tr, kwargs['result_num'], kwargs['rejection_weight'])
 
     if kwargs['apply_lm']:
-        result['lm_transducer'] = helper.load_transducer(
+        result['lm_transducer'] = load_transducer(
             'fst/lang_mod_theta_0_000001.mod.modified.hfst')
-        result['lowercase_transducer'] = helper.load_transducer(
+        result['lowercase_transducer'] = load_transducer(
             'fst/lowercase.hfst')
 
     return result
@@ -108,7 +108,7 @@ def correct_string(basename, input_str):
                     .replace(hfst.EPSILON, '')              # really necessary?
     
     logging.debug('input_str:  %s', input_str)
-    lattice = sw.process_string(
+    lattice = process_string(
         input_str, model['composition'],
         rejection_weight=gl_config['rejection_weight'])
     output_str = _output_tr_to_string(lattice)
@@ -236,8 +236,8 @@ def main():
         result_num = args.result_num)
 
     # load test data
-    gt_dict = helper.create_dict(args.directory, 'gt.txt')
-    ocr_dict = helper.create_dict(args.directory, args.input_suffix)
+    gt_dict = create_dict(args.directory, 'gt.txt')
+    ocr_dict = create_dict(args.directory, args.input_suffix)
 
     # process test data and output results
     results = parallel_process(ocr_dict.items(), args.processes) \
