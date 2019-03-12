@@ -12,7 +12,7 @@ GAP_ELEMENT = 0
 
 import editdistance # fastest (and no memory/stack problems), but no customized distance metrics and no alignment result
 
-import helper
+from .helper import load_pairs_from_dir
 
 
 def print_line(ocr, cor, gt):
@@ -280,9 +280,9 @@ def main():
     args = parse_arguments()
     
     # read the test data
-    ocr_dict = helper.create_dict(args.directory, args.input_suffix)
-    cor_dict = helper.create_dict(args.directory, args.output_suffix)
-    gt_dict = helper.create_dict(args.directory, args.gt_suffix)
+    ocr_dict = dict(load_pairs_from_dir(args.directory, args.input_suffix))
+    cor_dict = dict(load_pairs_from_dir(args.directory, args.output_suffix))
+    gt_dict = dict(load_pairs_from_dir(args.directory, args.gt_suffix))
     line_triplets = \
         ((ocr_dict[key].strip(), cor_dict[key].strip(), gt_dict[key].strip()) \
          for key in gt_dict)

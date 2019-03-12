@@ -39,6 +39,7 @@ setup(
         'console_scripts': [
             'cor-asv-fst-train=scripts.run:cli',
             'cor-asv-fst-process=ocrd_cor_asv_fst.lib.process_test_data:main',
+            'cor-asv-fst-evaluate=ocrd_cor_asv_fst.lib.evaluate_correction:main',
             'ocrd-cor-asv-fst-process=ocrd_cor_asv_fst.wrapper.cli:ocrd_cor_asv_fst',
         ]
     },
