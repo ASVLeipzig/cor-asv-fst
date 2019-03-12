@@ -221,7 +221,7 @@ def main():
     if args.input_file is None and \
             (args.input_suffix is None or args.directory is None):
         raise RuntimeError('No input data supplied! You have to specify either'
-                           '-i or -I and the data directory.')
+                           ' -i or -I and the data directory.')
     if args.output_file is None and \
             (args.output_suffix is None or args.directory is None):
         raise RuntimeError('No output file speficied! You have to specify '
