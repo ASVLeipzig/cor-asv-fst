@@ -1,4 +1,5 @@
 import hfst
+import logging
 import math
 from os import listdir
 import os.path
@@ -7,6 +8,10 @@ import os.path
 def save_transducer(filename, transducer, **kwargs):
     """Save hfst transducer to filename."""
 
+    logging.debug('Saving transducer ({} states, {} arcs) to: {}'\
+                  .format(transducer.number_of_states(),
+                          transducer.number_of_arcs(),
+                          filename))
     ostr = hfst.HfstOutputStream(filename=filename, **kwargs)
     ostr.write(transducer)
     ostr.flush()
@@ -16,6 +21,7 @@ def save_transducer(filename, transducer, **kwargs):
 def load_transducer(filename):
     """Load hfst transducer from filename."""
 
+    logging.debug('Loading transducer from: {}'.format(filename))
     transducer = None
     istr = hfst.HfstInputStream(filename)
     while not istr.is_eof():
