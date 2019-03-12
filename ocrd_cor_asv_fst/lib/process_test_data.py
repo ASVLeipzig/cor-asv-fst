@@ -35,35 +35,35 @@ def prepare_composition(lexicon_transducer, error_transducer, result_num, reject
     return result
 
 
-def prepare_model(punctuation_method, **kwargs):
+def prepare_model(model_dir, punctuation_method, **kwargs):
     # result = { 'flag_encoder' : sw.FlagEncoder() }
     result = {}
 
     transducers = {
         # 'flag_encoder' : result['flag_encoder'],
-        'lexicon' : load_transducer('fst/lexicon.hfst')
+        'lexicon' : load_transducer(os.path.join(model_dir, 'lexicon.hfst'))
     }
     if punctuation_method == 'bracket':
         transducers['error'] = load_transducer(
-            'fst/error.hfst')
+            os.path.join(model_dir, 'error.hfst'))
         transducers['punctuation'] = load_transducer(
-            'fst/punctuation_transducer_dta.hfst')
+            os.path.join(model_dir, 'punctuation_transducer_dta.hfst'))
         transducers['open_bracket'] = load_transducer(
-            'fst/open_bracket_transducer_dta.hfst')
+            os.path.join(model_dir, 'open_bracket_transducer_dta.hfst'))
         transducers['close_bracket'] = load_transducer(
-            'fst/close_bracket_transducer_dta.hfst')
+            os.path.join(model_dir, 'close_bracket_transducer_dta.hfst'))
     elif punctuation_method == 'lm':
         transducers['error'] = load_transducer(
-            'fst/max_error_3_context_23.hfst')
+            os.path.join(model_dir, 'max_error_3_context_23.hfst'))
         transducers['punctuation_left'] = load_transducer(
-            'fst/left_punctuation.hfst')
+            os.path.join(model_dir, 'left_punctuation.hfst'))
         transducers['punctuation_right'] = load_transducer(
-            'fst/right_punctuation.hfst')
+            os.path.join(model_dir, 'right_punctuation.hfst'))
     elif punctuation_method == 'preserve':
         transducers['error'] = load_transducer(
-            'fst/error.hfst')
+            os.path.join(model_dir, 'error.hfst'))
         transducers['punctuation'] = load_transducer(
-            'fst/any_punctuation_no_space.hfst')
+            os.path.join(model_dir, 'any_punctuation_no_space.hfst'))
 
     error_tr, lexicon_tr = build_model(transducers,
         punctuation_method=punctuation_method,
@@ -74,9 +74,9 @@ def prepare_model(punctuation_method, **kwargs):
 
     if kwargs['apply_lm']:
         result['lm_transducer'] = load_transducer(
-            'fst/lang_mod_theta_0_000001.mod.modified.hfst')
+            os.path.join(model_dir, 'lang_mod_theta_0_000001.mod.modified.hfst'))
         result['lowercase_transducer'] = load_transducer(
-            'fst/lowercase.hfst')
+            os.path.join(model_dir, 'lowercase.hfst'))
 
     return result
 
@@ -180,6 +180,9 @@ def parse_arguments():
         help='how to model punctuation between words (bracketing rules, '
              'inter-word language model, or keep unchanged)')
     parser.add_argument(
+        '-M', '--model-dir', metavar='DIR', type=str, default='.',
+        help='directory to look for model files')
+    parser.add_argument(
         '-W', '--words-per-window', metavar='NUM', type=int, default=3,
         help='maximum number of words in one window')
     parser.add_argument(
@@ -228,6 +231,7 @@ def main():
     
     # load all transducers and build a model out of them
     model = prepare_model(
+        args.model_dir,
         args.punctuation,
         apply_lm = args.apply_lm,
         composition_depth = args.composition_depth,
