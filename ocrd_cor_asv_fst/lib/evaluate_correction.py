@@ -12,7 +12,7 @@ GAP_ELEMENT = 0
 
 import editdistance # fastest (and no memory/stack problems), but no customized distance metrics and no alignment result
 
-from .helper import load_pairs_from_dir
+from .helper import load_pairs_from_dir, load_pairs_from_file
 
 
 def print_line(ocr, cor, gt):
@@ -241,17 +241,26 @@ def parse_arguments():
     parser = argparse.ArgumentParser(
         description='OCR post-correction batch evaluation ocrd-cor-asv-fst')
     parser.add_argument(
-        'directory', metavar='PATH',
+        '-d', '--directory', metavar='PATH',
         help='directory for GT, input, and output files')
     parser.add_argument(
-        '-I', '--input-suffix', metavar='SUF', type=str, default='txt',
+        '-I', '--input-suffix', metavar='SUF', type=str, default=None,
         help='input (OCR) filenames suffix')
+    parser.add_argument(
+        '-i', '--input-file', metavar='FILE', type=str, default=None,
+        help='file with input (OCR) data')
     parser.add_argument(
         '-O', '--output-suffix', metavar='SUF', type=str,
         default='cor-asv-fst.txt', help='output (corrected) filenames suffix')
     parser.add_argument(
+        '-o', '--output-file', metavar='FILE', type=str, default=None,
+        help='file with output (corrected) data')
+    parser.add_argument(
         '-G', '--gt-suffix', metavar='SUF', type=str,
         default='gt.txt', help='ground truth filenames suffix')
+    parser.add_argument(
+        '-g', '--gt-file', metavar='FILE', type=str, default=None,
+        help='file with ground truth data')
     parser.add_argument(
         '-M', '--metric', metavar='TYPE', type=str,
         choices=['Levenshtein', 'combining-e-umlauts', 'precision-recall'],
@@ -278,11 +287,31 @@ def main():
     """
 
     args = parse_arguments()
+
+    # check the validity of parameters specifying input/output
+    if args.input_file is None and \
+            (args.input_suffix is None or args.directory is None):
+        raise RuntimeError('No input data supplied! You have to specify either'
+                           ' -i or -I and the data directory.')
+    if args.output_file is None and \
+            (args.output_suffix is None or args.directory is None):
+        raise RuntimeError('No output file speficied! You have to specify '
+                           'either -o or -O and the data directory.')
+    if args.gt_file is None and \
+            (args.gt_suffix is None or args.directory is None):
+        raise RuntimeError('No ground truth file speficied! You have to '
+                           'specify either -g or -G and the data directory.')
     
     # read the test data
-    ocr_dict = dict(load_pairs_from_dir(args.directory, args.input_suffix))
-    cor_dict = dict(load_pairs_from_dir(args.directory, args.output_suffix))
-    gt_dict = dict(load_pairs_from_dir(args.directory, args.gt_suffix))
+    ocr_dict = dict(load_pairs_from_file(args.input_file)) \
+               if args.input_file is not None \
+               else dict(load_pairs_from_dir(args.directory, args.input_suffix))
+    cor_dict = dict(load_pairs_from_file(args.output_file)) \
+               if args.output_file is not None \
+               else dict(load_pairs_from_dir(args.directory, args.output_suffix))
+    gt_dict = dict(load_pairs_from_file(args.gt_file)) \
+              if args.gt_file is not None \
+              else dict(load_pairs_from_dir(args.directory, args.gt_suffix))
     line_triplets = \
         ((ocr_dict[key].strip(), cor_dict[key].strip(), gt_dict[key].strip()) \
          for key in gt_dict)
