@@ -142,14 +142,6 @@ def parallel_process(input_pairs, num_processes):
             raise RuntimeError('error during parallel processing')
 
 
-def print_results(results):
-    n = len(results)
-    for i, (basename, output_str) in enumerate(results):
-        print("%03d/%03d: %s" % (i+1, n, basename))
-        print(output_str)
-        print()
-
-
 def parse_arguments():
     parser = argparse.ArgumentParser(
         description='OCR post-correction ocrd-cor-asv-fst batch-processor '
@@ -251,12 +243,11 @@ def main():
             if args.input_file is not None \
             else load_pairs_from_dir(args.directory, args.input_suffix)
 
-    # process test data and output results
+    # process
     results = parallel_process(pairs, args.processes) \
               if args.processes > 1 \
               else [correct_string(basename, input_str) \
                     for basename, input_str in pairs]
-    print_results(results)
 
     # save results
     if args.output_file is not None:
