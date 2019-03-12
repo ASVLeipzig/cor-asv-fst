@@ -48,6 +48,7 @@ def generate_content(directory, filenames):
                     yield (filename.split('.')[0], line)
 
 
+# FIXME deprecated -- replace with load_pairs_from_dir()
 def create_dict(directory, suffix):
     """
     Read files at the given directory path following the filename scheme 
@@ -61,6 +62,38 @@ def create_dict(directory, suffix):
     for file_id, line in content:
         result_dict[file_id] = line
     return result_dict
+
+
+def load_pairs_from_file(filename):
+    results = []
+    with open(filename) as fp:
+        for i, line in enumerate(fp, 1):
+            line_spl = line.rstrip().split('\t')
+            if len(line_spl) >= 2:
+                results.append(tuple(line_spl[:2]))
+            else:
+                logging.warning(\
+                    '{}:{} -- line is not in two-column format: {}'\
+                    .format(filename, i, line.rstrip()))
+    return results
+
+
+def load_pairs_from_dir(directory, suffix):
+    filenames = get_filenames(directory, suffix)
+    return list(generate_content(directory, filenames))
+
+
+def save_pairs_to_file(pairs, filename):
+    with open(filename, 'w+') as fp:
+        for p in pairs:
+            fp.write('\t'.join(p) + '\n')
+
+
+def save_pairs_to_dir(pairs, directory, suffix):
+    for basename, string in pairs:
+        filename = basename + '.' + suffix
+        with open(os.path.join(directory, filename), 'w+') as fp:
+            fp.write(string)
 
 
 def convert_to_log_relative_freq(lexicon_dict, freq_threshold=2e-6): # /13 # 6e-6/12 # 1e-5/11.5

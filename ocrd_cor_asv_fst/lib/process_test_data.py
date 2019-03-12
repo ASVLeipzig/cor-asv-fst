@@ -9,7 +9,9 @@ import hfst
 
 from .extensions.composition import pyComposition
 from .sliding_window_no_flags import build_model, process_string
-from .helper import save_transducer, load_transducer, create_dict
+from .helper import \
+    save_transducer, load_transducer, load_pairs_from_file, \
+    load_pairs_from_dir, save_pairs_to_file, save_pairs_to_dir
 
 # globals (for painless cow-semantic shared memory fork-based multiprocessing)
 model = {}
@@ -92,16 +94,6 @@ def correct_string(basename, input_str):
         output_tr.compose(model['lm_transducer'])
         output_tr.input_project()
 
-    def _save_output_str(output_str, i):
-        if gl_config['rejection_weight'] < 0: # for ROC evaluation: multiple output files
-            suffix = gl_config['output_suffix'] + "." + "rw_" + str(i)
-        else:
-            suffix = gl_config['output_suffix']
-
-        filename = basename + "." + suffix
-        with open(os.path.join(gl_config['directory'], filename), 'w') as f:
-            f.write(output_str)
-
     def _output_tr_to_string(tr):
         paths = hfst.HfstTransducer(tr).extract_shortest_paths()
         return list(paths.items())[0][1][0][0]\
@@ -112,7 +104,6 @@ def correct_string(basename, input_str):
         input_str, model['composition'],
         rejection_weight=gl_config['rejection_weight'])
     output_str = _output_tr_to_string(lattice)
-    _save_output_str(output_str, 0)
     logging.debug('output_str: %s', output_str)
 
     # try:
@@ -136,7 +127,7 @@ def correct_string(basename, input_str):
     #     logging.exception('exception for window result of "%s"' % input_str)
     #     raise e
     
-    return basename, input_str, output_str
+    return basename, output_str
 
 
 def parallel_process(input_pairs, num_processes):
@@ -153,9 +144,8 @@ def parallel_process(input_pairs, num_processes):
 
 def print_results(results):
     n = len(results)
-    for i, (basename, input_str, output_str) in enumerate(results):
+    for i, (basename, output_str) in enumerate(results):
         print("%03d/%03d: %s" % (i+1, n, basename))
-        print(input_str)
         print(output_str)
         print()
 
@@ -165,14 +155,20 @@ def parse_arguments():
         description='OCR post-correction ocrd-cor-asv-fst batch-processor '
                     'tool')
     parser.add_argument(
-        'directory', metavar='PATH',
+        '-d', '--directory', metavar='PATH', default=None,
         help='directory for input and output files')
     parser.add_argument(
-        '-I', '--input-suffix', metavar='SUF', type=str, default='txt',
+        '-I', '--input-suffix', metavar='SUF', type=str, default=None,
         help='input (OCR) filenames suffix')
     parser.add_argument(
-        '-O', '--output-suffix', metavar='SUF', type=str,
-        default='cor-asv-fst.txt', help='output (corrected) filenames suffix')
+        '-i', '--input-file', metavar='FILE', type=str, default=None,
+        help='file containing the input data in two-column format')
+    parser.add_argument(
+        '-O', '--output-suffix', metavar='SUF', type=str, default=None,
+        help='output (corrected) filenames suffix')
+    parser.add_argument(
+        '-o', '--output-file', metavar='FILE', type=str, default=None,
+        help='file to write the output data in two-column format')
     parser.add_argument(
         '-P', '--punctuation', metavar='MODEL', type=str,
         choices=['bracket', 'lm', 'preserve'], default='bracket',
@@ -209,10 +205,12 @@ def parse_arguments():
 
 def main():
     """
-    Read OCR files following the path scheme <directory>/<ID>.<suffix>,
-    where each file contains one line of text.
-    Correct each line and write output files in same directory with suffix
-    specified in output_suffix.
+    Read OCR-ed lines:
+    - either from files following the path scheme <directory>/<ID>.<suffix>,
+      where each file contains one line of text,
+    - or from a single, two-column file: <ID> <TAB> <line>.
+    Correct each line and save output according to one of the two
+    above-mentioned schemata.
     """
 
     global model, gl_config
@@ -224,9 +222,19 @@ def main():
         'result_num' : args.result_num,
         'apply_lm' : args.apply_lm,
         'output_suffix' : args.output_suffix,
-        'directory' : args.directory,
         'rejection_weight' : args.rejection_weight,
     }
+
+    # check the validity of parameters specifying input/output
+    if args.input_file is None and \
+            (args.input_suffix is None or args.directory is None):
+        raise RuntimeError('No input data supplied! You have to specify either'
+                           '-i or -I and the data directory.')
+    if args.output_file is None and \
+            (args.output_suffix is None or args.directory is None):
+        raise RuntimeError('No output file speficied! You have to specify '
+                           'either -o or -O and the data directory.')
+
     
     # load all transducers and build a model out of them
     model = prepare_model(
@@ -238,15 +246,23 @@ def main():
         rejection_weight = args.rejection_weight,
         result_num = args.result_num)
 
-    # load test data
-    ocr_dict = create_dict(args.directory, args.input_suffix)
+    # load input data
+    pairs = load_pairs_from_file(args.input_file) \
+            if args.input_file is not None \
+            else load_pairs_from_dir(args.directory, args.input_suffix)
 
     # process test data and output results
-    results = parallel_process(ocr_dict.items(), args.processes) \
+    results = parallel_process(pairs, args.processes) \
               if args.processes > 1 \
               else [correct_string(basename, input_str) \
-                    for basename, input_str in ocr_dict.items()]
+                    for basename, input_str in pairs]
     print_results(results)
+
+    # save results
+    if args.output_file is not None:
+        save_pairs_to_file(results, args.output_file)
+    else:
+        save_pairs_to_dir(results, args.directory, args.output_suffix)
 
 
 if __name__ == '__main__':
