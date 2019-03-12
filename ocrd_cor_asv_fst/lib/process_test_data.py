@@ -151,13 +151,12 @@ def parallel_process(input_pairs, num_processes):
             raise RuntimeError('error during parallel processing')
 
 
-def print_results(results, gt_dict):
+def print_results(results):
     n = len(results)
     for i, (basename, input_str, output_str) in enumerate(results):
         print("%03d/%03d: %s" % (i+1, n, basename))
         print(input_str)
         print(output_str)
-        print(gt_dict[basename])
         print()
 
 
@@ -240,7 +239,6 @@ def main():
         result_num = args.result_num)
 
     # load test data
-    gt_dict = create_dict(args.directory, 'gt.txt')
     ocr_dict = create_dict(args.directory, args.input_suffix)
 
     # process test data and output results
@@ -248,7 +246,7 @@ def main():
               if args.processes > 1 \
               else [correct_string(basename, input_str) \
                     for basename, input_str in ocr_dict.items()]
-    print_results(results, gt_dict)
+    print_results(results)
 
 
 if __name__ == '__main__':
