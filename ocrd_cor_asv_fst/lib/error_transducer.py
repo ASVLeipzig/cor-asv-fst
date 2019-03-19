@@ -22,8 +22,8 @@ import difflib
 #             but it must not ever occur in input
 GAP_ELEMENT = u' ' # (nbsp) # '\0' # (nul breaks things in libhfst)
 
-import helper
-from sliding_window import FlagEncoder
+from .helper import create_dict
+from .sliding_window import FlagEncoder
 
 def get_confusion_dicts(gt_dict, raw_dict, max_n):
     """
@@ -409,8 +409,8 @@ def load_input_from_csv(filename):
 def load_input_from_dir(directory, input_suffix, gt_suffix):
     'Load training data from a directory.'
     if os.path.isdir(directory) and os.access(directory, os.R_OK|os.X_OK):
-        ocr_dict = helper.create_dict(directory, input_suffix)
-        gt_dict = helper.create_dict(directory, gt_suffix)
+        ocr_dict = create_dict(directory, input_suffix)
+        gt_dict = create_dict(directory, gt_suffix)
         return ocr_dict, gt_dict
     else:
         raise argparse.ArgumentTypeError(

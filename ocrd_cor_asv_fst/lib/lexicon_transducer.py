@@ -9,7 +9,9 @@ import re
 import spacy
 import spacy.tokenizer
 
-import helper
+from .helper import \
+    convert_to_log_relative_freq, get_filenames, generate_content, \
+    save_transducer, transducer_from_dict
 
 
 MIN_LINE_LENGTH = 3
@@ -109,13 +111,13 @@ def build_lexicon(lines):
     num_re = re.compile('[0-9]{1,3}([,.]?[0-9]{3})*([.,][0-9]*)?')
     nlp = setup_spacy()
     
-    if isinstance(lines, dict):
-        lines = lines.values()
-    elif hasattr(lines, '__iter__'): # accept generators
-        lines = map(itemgetter(1), lines)
-    else:
-        raise RuntimeError('Creating lexicon failed: %s given, but dict or '
-                           'list expected' % type(lines))
+    # if isinstance(lines, dict):
+    #     lines = lines.values()
+    # elif hasattr(lines, '__iter__'): # accept generators
+    #     lines = map(itemgetter(1), lines)
+    # else:
+    #     raise RuntimeError('Creating lexicon failed: %s given, but dict or '
+    #                        'list expected' % type(lines))
 
     for line in lines:
         if len(line) < MIN_LINE_LENGTH:
@@ -143,6 +145,35 @@ def build_lexicon(lines):
     return lexicon
 
 
+def lexicon_to_fst(lexicon, punctuation='bracket'):
+    words_fst = transducer_from_dict(
+        convert_to_log_relative_freq(lexicon.words))
+    punctuation_fst = transducer_from_dict(
+        convert_to_log_relative_freq(lexicon.punctuation))
+    open_bracket_fst = transducer_from_dict(
+        convert_to_log_relative_freq(lexicon.opening_brackets))
+    close_bracket_fst = transducer_from_dict(
+        convert_to_log_relative_freq(lexicon.closing_brackets))
+
+    # in the lexicon dict, numbers are counted as sequences of 1
+    # thus, they are replaced by any possible number of the according length
+    words_fst.substitute(('1', '1'), get_digit_tuples())
+
+    if punctuation == 'bracket':
+        # TODO compounds
+        open_bracket_fst.optionalize()
+        close_bracket_fst.optionalize()
+        punctuation_fst.optionalize()
+        result = open_bracket_fst
+        result.concatenate(words_fst)
+        result.concatenate(punctuation_fst)
+        result.concatenate(close_bracket_fst)
+        return result
+    else:
+        # FIXME implement further punctuation methods
+        raise NotImplementedError()
+
+
 def parse_arguments():
     parser = argparse.ArgumentParser(
         description='OCR post-correction ocrd-cor-asv-fst lexicon extractor')
@@ -168,31 +199,31 @@ def main():
     args = parse_arguments()
 
     # load training data
-    gt_filenames = helper.get_filenames(args.directory, args.gt_suffix)
-    gt_data = helper.generate_content(args.directory, gt_filenames)
+    gt_filenames = get_filenames(args.directory, args.gt_suffix)
+    gt_data = generate_content(args.directory, gt_filenames)
 
     # count frequencies of types
     lexicon = build_lexicon(gt_data)
 
     # convert frequencies to log-relative frequencies
-    lexicon_transducer = helper.transducer_from_dict(
-        helper.convert_to_log_relative_freq(lexicon.words))
-    punctuation_transducer = helper.transducer_from_dict(
-        helper.convert_to_log_relative_freq(lexicon.punctuation))
-    open_bracket_transducer = helper.transducer_from_dict(
-        helper.convert_to_log_relative_freq(lexicon.opening_brackets))
-    close_bracket_transducer = helper.transducer_from_dict(
-        helper.convert_to_log_relative_freq(lexicon.closing_brackets))
+    lexicon_transducer = transducer_from_dict(
+        convert_to_log_relative_freq(lexicon.words))
+    punctuation_transducer = transducer_from_dict(
+        convert_to_log_relative_freq(lexicon.punctuation))
+    open_bracket_transducer = transducer_from_dict(
+        convert_to_log_relative_freq(lexicon.opening_brackets))
+    close_bracket_transducer = transducer_from_dict(
+        convert_to_log_relative_freq(lexicon.closing_brackets))
 
     # in the lexicon dict, numbers are counted as sequences of 1
     # thus, they are replaced by any possible number of the according length
     lexicon_transducer.substitute(('1', '1'), get_digit_tuples())
 
     # save the resulting transducers
-    helper.save_transducer('lexicon_transducer_dta.hfst', lexicon_transducer)
-    helper.save_transducer('punctuation_transducer_dta.hfst', punctuation_transducer)
-    helper.save_transducer('open_bracket_transducer_dta.hfst', open_bracket_transducer)
-    helper.save_transducer('close_bracket_transducer_dta.hfst', close_bracket_transducer)
+    save_transducer('lexicon_transducer_dta.hfst', lexicon_transducer)
+    save_transducer('punctuation_transducer_dta.hfst', punctuation_transducer)
+    save_transducer('open_bracket_transducer_dta.hfst', open_bracket_transducer)
+    save_transducer('close_bracket_transducer_dta.hfst', close_bracket_transducer)
 
 
 if __name__ == '__main__':
