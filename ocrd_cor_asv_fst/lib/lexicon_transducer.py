@@ -2,6 +2,7 @@ import argparse
 from collections import defaultdict, namedtuple
 from functools import reduce
 import hfst
+import logging
 from operator import itemgetter
 import re
 

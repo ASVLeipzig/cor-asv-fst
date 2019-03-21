@@ -8,7 +8,7 @@ import multiprocessing as mp
 import hfst
 
 from .extensions.composition import pyComposition
-from .sliding_window_no_flags import build_model, process_string
+from .sliding_window_no_flags import lexicon_to_window_fst, process_string
 from .helper import \
     save_transducer, load_transducer, load_pairs_from_file, \
     load_pairs_from_dir, save_pairs_to_file, save_pairs_to_dir
@@ -37,49 +37,13 @@ def prepare_composition(lexicon_transducer, error_transducer, result_num, reject
     return result
 
 
-def prepare_model(model_dir, punctuation_method, **kwargs):
-    # result = { 'flag_encoder' : sw.FlagEncoder() }
-    result = {}
-
-    transducers = {
-        # 'flag_encoder' : result['flag_encoder'],
-        'lexicon' : load_transducer(os.path.join(model_dir, 'lexicon.hfst'))
-    }
-    if punctuation_method == 'bracket':
-        transducers['error'] = load_transducer(
-            os.path.join(model_dir, 'error.hfst'))
-        transducers['punctuation'] = load_transducer(
-            os.path.join(model_dir, 'punctuation_transducer_dta.hfst'))
-        transducers['open_bracket'] = load_transducer(
-            os.path.join(model_dir, 'open_bracket_transducer_dta.hfst'))
-        transducers['close_bracket'] = load_transducer(
-            os.path.join(model_dir, 'close_bracket_transducer_dta.hfst'))
-    elif punctuation_method == 'lm':
-        transducers['error'] = load_transducer(
-            os.path.join(model_dir, 'max_error_3_context_23.hfst'))
-        transducers['punctuation_left'] = load_transducer(
-            os.path.join(model_dir, 'left_punctuation.hfst'))
-        transducers['punctuation_right'] = load_transducer(
-            os.path.join(model_dir, 'right_punctuation.hfst'))
-    elif punctuation_method == 'preserve':
-        transducers['error'] = load_transducer(
-            os.path.join(model_dir, 'error.hfst'))
-        transducers['punctuation'] = load_transducer(
-            os.path.join(model_dir, 'any_punctuation_no_space.hfst'))
-
-    error_tr, lexicon_tr = build_model(transducers,
-        punctuation_method=punctuation_method,
-        composition_depth=kwargs['composition_depth'],
-        words_per_window=kwargs['words_per_window'])
-    result['composition'] = prepare_composition(
-        lexicon_tr, error_tr, kwargs['result_num'], kwargs['rejection_weight'])
-
-    if kwargs['apply_lm']:
-        result['lm_transducer'] = load_transducer(
-            os.path.join(model_dir, 'lang_mod_theta_0_000001.mod.modified.hfst'))
-        result['lowercase_transducer'] = load_transducer(
-            os.path.join(model_dir, 'lowercase.hfst'))
-
+def prepare_model(lexicon_file, error_model_file, **kwargs):
+    lexicon_fst = load_transducer(lexicon_file)
+    error_fst = load_transducer(error_model_file)
+    window_fst = lexicon_to_window_fst(\
+        lexicon_fst, kwargs['words_per_window'])
+    result = prepare_composition(\
+        window_fst, error_fst, kwargs['result_num'], kwargs['rejection_weight'])
     return result
 
 
@@ -87,12 +51,12 @@ def prepare_model(model_dir, punctuation_method, **kwargs):
 def correct_string(basename, input_str):
     global model, gl_config
 
-    def _apply_lm(output_tr):
-        output_tr.output_project()
-        # FIXME: should also be composed via OpenFST library (pyComposition)
-        output_tr.compose(model['lowercase_transducer'])
-        output_tr.compose(model['lm_transducer'])
-        output_tr.input_project()
+    # def _apply_lm(output_tr):
+    #     output_tr.output_project()
+    #     # FIXME: should also be composed via OpenFST library (pyComposition)
+    #     output_tr.compose(model['lowercase_transducer'])
+    #     output_tr.compose(model['lm_transducer'])
+    #     output_tr.input_project()
 
     def _output_tr_to_string(tr):
         paths = hfst.HfstTransducer(tr).extract_shortest_paths()
@@ -101,7 +65,7 @@ def correct_string(basename, input_str):
     
     logging.debug('input_str:  %s', input_str)
     lattice = process_string(
-        input_str, model['composition'],
+        input_str, model,
         rejection_weight=gl_config['rejection_weight'])
     output_str = _output_tr_to_string(lattice)
     logging.debug('output_str: %s', output_str)
@@ -146,6 +110,13 @@ def parse_arguments():
     parser = argparse.ArgumentParser(
         description='OCR post-correction ocrd-cor-asv-fst batch-processor '
                     'tool')
+    # TODO HERE
+    parser.add_argument(
+        '-l', '--lexicon-file', metavar='FILE', type=str, default=None,
+        help='file containing the lexicon transducer')
+    parser.add_argument(
+        '-e', '--error-model-file', metavar='FILE', type=str, default=None,
+        help='file containing the error model transducer')
     parser.add_argument(
         '-d', '--directory', metavar='PATH', default=None,
         help='directory for input and output files')
@@ -162,22 +133,11 @@ def parse_arguments():
         '-o', '--output-file', metavar='FILE', type=str, default=None,
         help='file to write the output data in two-column format')
     parser.add_argument(
-        '-P', '--punctuation', metavar='MODEL', type=str,
-        choices=['bracket', 'lm', 'preserve'], default='bracket',
-        help='how to model punctuation between words (bracketing rules, '
-             'inter-word language model, or keep unchanged)')
-    parser.add_argument(
-        '-M', '--model-dir', metavar='DIR', type=str, default='.',
-        help='directory to look for model files')
-    parser.add_argument(
         '-W', '--words-per-window', metavar='NUM', type=int, default=3,
         help='maximum number of words in one window')
     parser.add_argument(
         '-R', '--result-num', metavar='NUM', type=int, default=10,
         help='result paths per window')
-    parser.add_argument(
-        '-D', '--composition-depth', metavar='NUM', type=int, default=2,
-        help='number of lexicon words that can be concatenated')
     parser.add_argument(
         '-J', '--rejection-weight', metavar='WEIGHT', type=float, default=1.5,
         help='transition weight for unchanged input window')
@@ -230,10 +190,9 @@ def main():
     
     # load all transducers and build a model out of them
     model = prepare_model(
-        args.model_dir,
-        args.punctuation,
+        args.lexicon_file,
+        args.error_model_file,
         apply_lm = args.apply_lm,
-        composition_depth = args.composition_depth,
         words_per_window = args.words_per_window,
         rejection_weight = args.rejection_weight,
         result_num = args.result_num)
