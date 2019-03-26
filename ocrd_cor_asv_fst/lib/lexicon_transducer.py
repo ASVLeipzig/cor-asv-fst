@@ -169,6 +169,14 @@ def lexicon_to_fst(lexicon, punctuation='bracket'):
         result.concatenate(words_fst)
         result.concatenate(punctuation_fst)
         result.concatenate(close_bracket_fst)
+
+        # standardize the umlaut characters
+        precompose_transducer = hfst.regex(
+            '[a\u0364:ä|o\u0364:ö|u\u0364:ü|A\u0364:Ä|O\u0364:Ö|U\u0364:Ü|?]*')
+        result.compose(precompose_transducer)
+        result.output_project()
+        result.minimize()
+        result.push_weights_to_start()
         return result
     else:
         # FIXME implement further punctuation methods
