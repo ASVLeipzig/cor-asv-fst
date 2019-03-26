@@ -70,6 +70,9 @@ def parse_arguments():
         help='ignore edits to/from non-alphanumeric or non-space characters '
              '(only the \'simple\' model)')
     parser.add_argument(
+        '--min-context', metavar='NUM', type=int, default=1,
+        help='minimum size of context count edits at')
+    parser.add_argument(
         '-C', '--max-context', metavar='NUM', type=int, default=3,
         help='maximum size of context count edits at')
     parser.add_argument(
@@ -141,9 +144,11 @@ def main():
             args.max_errors)
         # FIXME combine_error_transducers() should return a single FST instead
         # of this complicated dict structure
+        target_context = \
+            ''.join(map(str, range(args.min_context, args.max_context+1)))
         for tr_dict in combined_tr_dicts:
             if tr_dict['max_error'] == args.max_errors and \
-                    len(tr_dict['context']) == args.max_context:
+                    tr_dict['context'] == target_context:
                 save_transducer(args.error_model_file, tr_dict['transducer'])
 
     def _train_st_error_model(args):
