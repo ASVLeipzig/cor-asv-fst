@@ -60,6 +60,9 @@ def parse_arguments():
     parser.add_argument(
         '-D', '--composition-depth', metavar='NUM', type=int, default=2,
         help='max. number of lexicon words that can be concatenated')
+    parser.add_argument(
+        '--lexicon-added-word-cost', metavar='NUM', type=float, default=0,
+        help='a constant to add to the weights of every word in lexicon')
     # PARAMETERS FOR TRAINING THE ERROR MODEL
     parser.add_argument(
         '-T', '--error-model-type', metavar='MODEL', type=str,
@@ -119,7 +122,9 @@ def main():
     def _train_lexicon(args):
         training_lines = _load_lexicon_training_data(args)
         lexicon = build_lexicon(training_lines)
-        tr = lexicon_to_fst(lexicon, punctuation=args.punctuation)
+        tr = lexicon_to_fst(\
+            lexicon, punctuation=args.punctuation,
+            added_word_cost=args.lexicon_added_word_cost)
         save_transducer(args.lexicon_file, tr)
 
     def _train_simple_error_model(args):

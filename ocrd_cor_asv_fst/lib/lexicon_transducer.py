@@ -146,9 +146,17 @@ def build_lexicon(lines):
     return lexicon
 
 
-def lexicon_to_fst(lexicon, punctuation='bracket'):
-    words_fst = transducer_from_dict(
-        convert_to_log_relative_freq(lexicon.words))
+def lexicon_to_fst(lexicon, punctuation='bracket', added_word_cost=0):
+    words_dict = convert_to_log_relative_freq(lexicon.words)
+    # add `added_word_cost` to the cost of every word
+    # (FIXME this is a dirty workaround to reproduce the approximate behaviour
+    # of the legacy implementation of the sliding window algorithm; it should
+    # be replaced with something more theoretically sound)
+    if added_word_cost != 0:
+        logging.debug('adding {} to word costs'.format(added_word_cost))
+        for w in words_dict:
+            words_dict[w] += added_word_cost
+    words_fst = transducer_from_dict(words_dict)
     punctuation_fst = transducer_from_dict(
         convert_to_log_relative_freq(lexicon.punctuation))
     open_bracket_fst = transducer_from_dict(
