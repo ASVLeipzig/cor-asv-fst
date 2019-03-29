@@ -8,7 +8,7 @@ import multiprocessing as mp
 import hfst
 
 from .extensions.composition import pyComposition
-from .sliding_window_no_flags import lexicon_to_window_fst, process_string
+from .sliding_window import lexicon_to_window_fst, process_string
 from .helper import \
     save_transducer, load_transducer, load_pairs_from_file, \
     load_pairs_from_dir, save_pairs_to_file, save_pairs_to_dir

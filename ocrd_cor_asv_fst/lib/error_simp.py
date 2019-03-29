@@ -23,7 +23,6 @@ import difflib
 GAP_ELEMENT = u' ' # (nbsp) # '\0' # (nul breaks things in libhfst)
 
 from .helper import create_dict
-from .sliding_window import FlagEncoder
 
 def get_confusion_dicts(gt_dict, raw_dict, max_n):
     """
@@ -276,13 +275,7 @@ def transducer_from_list(confusion_list, frequency_class=False, weight_threshold
     # maybe we can keep this approach with hfst.tokenized_fst()?
     confusion_fst.substitute(GAP_ELEMENT, hfst.EPSILON, input=True, output=True)
 
-    # make sure the error transducer already contains the flag symbols
-    # needed for the sliding window construction (to avoid the need to
-    # merge symbol tables on the input transducer during composition):
     confusion_fst = hfst.HfstTransducer(confusion_fst)
-    flag_encoder = FlagEncoder()
-    for flag in flag_encoder.flag_list:
-        confusion_fst.insert_to_alphabet(flag)
     return confusion_fst
 
 
