@@ -39,9 +39,9 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'cor-asv-fst-train=ocrd_cor_asv_fst.lib.train:main',
-            'cor-asv-fst-process=ocrd_cor_asv_fst.lib.process:main',
-            'cor-asv-fst-evaluate=ocrd_cor_asv_fst.lib.evaluate:main',
+            'cor-asv-fst-train=ocrd_cor_asv_fst.scripts.train:main',
+            'cor-asv-fst-process=ocrd_cor_asv_fst.scripts.process:main',
+            'cor-asv-fst-evaluate=ocrd_cor_asv_fst.scripts.evaluate:main',
             'ocrd-cor-asv-fst-process=ocrd_cor_asv_fst.wrapper.cli:ocrd_cor_asv_fst',
         ]
     },

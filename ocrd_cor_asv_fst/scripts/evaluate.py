@@ -12,7 +12,7 @@ GAP_ELEMENT = 0
 
 import editdistance # fastest (and no memory/stack problems), but no customized distance metrics and no alignment result
 
-from .helper import load_pairs_from_dir, load_pairs_from_file
+from ..lib.helper import load_pairs_from_dir, load_pairs_from_file
 
 
 def print_line(ocr, cor, gt):

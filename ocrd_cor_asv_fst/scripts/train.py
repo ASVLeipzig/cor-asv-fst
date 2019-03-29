@@ -2,11 +2,11 @@ import argparse
 import logging
 from operator import itemgetter
 
-from .lexicon import build_lexicon, lexicon_to_fst
-from .error_simp import \
+from ..lib.lexicon import build_lexicon, lexicon_to_fst
+from ..lib.error_simp import \
     get_confusion_dicts, compile_single_error_transducer, \
     combine_error_transducers
-from .helper import load_pairs_from_file, load_pairs_from_dir, save_transducer
+from ..lib.helper import load_pairs_from_file, load_pairs_from_dir, save_transducer
 
 
 def parse_arguments():
