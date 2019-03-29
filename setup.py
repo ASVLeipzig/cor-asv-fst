@@ -15,7 +15,7 @@ from Cython.Distutils import build_ext
 cfg_vars = get_config_vars()
 for key, value in cfg_vars.items():
     if type(value) == str:
-        cfg_vars[key] = value.replace("-Wstrict-prototypes", "-std=c++11")
+        cfg_vars[key] = value.replace("-Wstrict-prototypes", "")
 install_requires = open('requirements.txt').read().split('\n')
 
 with codecs.open('README.md', encoding='utf-8') as f:
