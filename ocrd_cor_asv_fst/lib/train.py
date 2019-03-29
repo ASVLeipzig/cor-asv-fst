@@ -2,8 +2,8 @@ import argparse
 import logging
 from operator import itemgetter
 
-from .lexicon_transducer import build_lexicon, lexicon_to_fst
-from .error_transducer import \
+from .lexicon import build_lexicon, lexicon_to_fst
+from .error_simp import \
     get_confusion_dicts, compile_single_error_transducer, \
     combine_error_transducers
 from .helper import load_pairs_from_file, load_pairs_from_dir, save_transducer
