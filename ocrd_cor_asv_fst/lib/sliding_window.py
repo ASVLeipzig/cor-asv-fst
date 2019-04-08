@@ -199,6 +199,11 @@ def lexicon_to_window_fst(lexicon_fst, words_per_window=2):
     return result
 
 
+def lattice_shortest_path(lattice_fst):
+    paths = hfst.HfstTransducer(tr).extract_shortest_paths()
+    return list(paths.items())[0][1][0][0].replace(hfst.EPSILON, '')
+
+
 ##############################################################333
 # The Corrector class
 ##############################################################333

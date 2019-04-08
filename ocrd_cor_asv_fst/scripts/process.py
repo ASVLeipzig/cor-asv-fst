@@ -5,10 +5,10 @@ import logging
 import argparse
 import tempfile
 import multiprocessing as mp
-import hfst
 
 from ..lib.extensions.composition import pyComposition
-from ..lib.sliding_window import lexicon_to_window_fst, process_string
+from ..lib.sliding_window import \
+    lexicon_to_window_fst, lattice_shortest_path, process_string
 from ..lib.helper import \
     save_transducer, load_transducer, load_pairs_from_file, \
     load_pairs_from_dir, save_pairs_to_file, save_pairs_to_dir
@@ -50,47 +50,12 @@ def prepare_model(lexicon_file, error_model_file, **kwargs):
 # needs to be global for multiprocessing
 def correct_string(basename, input_str):
     global model, gl_config
-
-    # def _apply_lm(output_tr):
-    #     output_tr.output_project()
-    #     # FIXME: should also be composed via OpenFST library (pyComposition)
-    #     output_tr.compose(model['lowercase_transducer'])
-    #     output_tr.compose(model['lm_transducer'])
-    #     output_tr.input_project()
-
-    def _output_tr_to_string(tr):
-        paths = hfst.HfstTransducer(tr).extract_shortest_paths()
-        return list(paths.items())[0][1][0][0]\
-                    .replace(hfst.EPSILON, '')              # really necessary?
-    
     logging.debug('input_str:  %s', input_str)
     lattice = process_string(
         input_str, model,
         rejection_weight=gl_config['rejection_weight'])
-    output_str = _output_tr_to_string(lattice)
+    output_str = lattice_shortest_path(lattice)
     logging.debug('output_str: %s', output_str)
-
-    # try:
-    #     complete_outputs = sw.window_size_1_2(
-    #         input_str, None, None, model['flag_encoder'],
-    #         gl_config['result_num'], model['composition'])
-        
-    #     for i, complete_output in enumerate(complete_outputs):
-    #         if not gl_config['apply_lm']:
-    #             complete_output.n_best(1)
-
-    #         complete_output = sw.remove_flags(
-    #             complete_output, model['flag_encoder'])
-    #         if gl_config['apply_lm']:
-    #             _apply_lm(complete_output)
-    #         output_str = _output_tr_to_string(complete_output)
-    #         _save_output_str(output_str, i)
-    #         logging.debug('output_str: %s', output_str)
-
-    # except Exception as e:
-    #     logging.exception('exception for window result of "%s"' % input_str)
-    #     raise e
-    
     return basename, output_str
 
 
