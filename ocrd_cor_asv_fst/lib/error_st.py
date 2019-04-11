@@ -1,3 +1,5 @@
+# FIXME currently deprecated -- fix to use pynini instead of hfst
+
 '''Error model based on a stochastic transducer.'''
 # TODO literature, computing P(y|x) rather than P(x, y) etc.
 

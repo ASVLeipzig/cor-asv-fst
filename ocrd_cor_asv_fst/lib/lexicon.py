@@ -1,7 +1,6 @@
 import argparse
 from collections import defaultdict, namedtuple
 from functools import reduce
-import hfst
 import logging
 from operator import itemgetter
 import re
@@ -12,7 +11,7 @@ import spacy.tokenizer
 
 from .helper import \
     convert_to_log_relative_freq, get_filenames, generate_content, \
-    save_transducer, transducer_from_dict
+    transducer_from_dict
 
 
 MIN_LINE_LENGTH = 3

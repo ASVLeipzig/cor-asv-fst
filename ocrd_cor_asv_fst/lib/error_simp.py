@@ -8,7 +8,6 @@ import argparse
 import math
 import csv
 
-import hfst
 from nltk import ngrams
 import pynini
 
@@ -23,7 +22,7 @@ import difflib
 #             but it must not ever occur in input
 GAP_ELEMENT = u' ' # (nbsp) # '\0' # (nul breaks things in libhfst)
 
-from .helper import create_dict, escape_for_pynini
+from .helper import escape_for_pynini
 
 def get_confusion_dicts(gt_dict, raw_dict, max_n):
     """

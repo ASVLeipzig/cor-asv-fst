@@ -1,11 +1,10 @@
-import hfst
 import logging
 from operator import itemgetter
 import pynini
 import tempfile
 import time
 
-from .helper import escape_for_pynini, load_transducer, save_transducer
+from .helper import escape_for_pynini
 
 
 def _print_paths(paths):
@@ -33,40 +32,9 @@ def create_window(tokens):
     return result
 
 
-def _hfst_create_window(tokens):
+def process_window(input_str, window_fst, model, n=10, rejection_weight=1.5):
     '''
-    Create a window for the given input tokens (supplied as a list of
-    strings).
-    '''
-    return hfst.fst(' '.join(tokens))
-
-
-def process_window_with_hfst(input_str, window_fst, model, n=10, rejection_weight=10):
-    '''
-    Compose a window input automaton with the model using HFST
-    composition.
-    '''
-    t1 = time.time()
-    for fst in model:
-        window_fst.compose(fst)
-    window_fst.minimize()
-    window_fst.n_best(n)
-    window_fst.output_project()
-    if ' ' not in input_str:
-        # allow also identity for windows of length 1
-        # (with weight `rejection_weight`)
-        window_fst.disjunct(hfst.fst((input_str, rejection_weight)))
-    window_fst.minimize()
-    t2 = time.time()
-    logging.debug('states: {}'.format(window_fst.number_of_states()))
-    logging.debug('Processing time: {}s'.format(t2-t1))
-    return window_fst
-
-
-def process_window_with_pynini(input_str, window_fst, model, n=10, rejection_weight=1.5):
-    '''
-    Compose a window input automaton with the model using Pynini
-    composition.
+    Compose a window input automaton with the model.
     '''
     t1 = time.time()
     window_fst.relabel_tables(
@@ -90,14 +58,6 @@ def process_window_with_pynini(input_str, window_fst, model, n=10, rejection_wei
     # logging.debug('states: {}'.format(window_fst.number_of_states()))
     logging.debug('Total processing time: {}s'.format(t2-t1))
     return window_fst
-
-
-def process_window(input_str, window_fst, model, rejection_weight=10):
-    '''Compose a window input automaton with the model.'''
-    if isinstance(model, tuple):
-        return process_window_with_pynini(input_str, window_fst, model, rejection_weight)
-    else:
-        raise RuntimeError('Unknown model type: {}'.format(type(model)))
 
 
 def recombine_windows(window_fsts):
@@ -144,91 +104,6 @@ def recombine_windows(window_fsts):
 
     result = pynini.replace(root, replacements)
     result.optimize()
-
-    t2 = time.time()
-    logging.debug('Recombining time: {}s'.format(t2-t1))
-
-    return result
-
-
-def _hfst_recombine_windows(window_fsts):
-    '''
-    Recombine the window transducers into the transducer correcting the whole
-    input string.
-    '''
-
-    t1 = time.time()
-
-    # convert window fsts to basic transducers
-    window_basic_fsts = { (i, j) : hfst.HfstBasicTransducer(window) \
-                          for (i, j), window in window_fsts.items() }
-
-    # determine the input string length and max. window size
-    # (TODO without iterating!!!)
-    num_tokens = max(i for (i, j) in window_fsts)+1
-    max_window_size = max(j for (i, j) in window_fsts)
-
-    result = hfst.HfstBasicTransducer()
-    # add states:
-    # 0 - the initial state
-    # 1 - the final state
-    result.add_state()
-    assert result.states() == (0, 1)
-    result.set_final_weight(1, 0.0)
-
-    # create a dictionary translating the states of the window transducers to
-    # the states of the resulting transducer
-    state_dict = {}
-    for (i, j), window in window_basic_fsts.items():
-        for k in window.states():
-            state_dict[(i, j, k)] = result.add_state()
-
-    # add transitions leading to the first window of each size
-    # (assuming that state 0 is initial in every HfstBasicTransducer!)
-    for j in range(1, max_window_size+1):
-        result.add_transition(
-            0,
-            hfst.HfstBasicTransition(
-                state_dict[(0, j, 0)],
-                hfst.EPSILON,
-                hfst.EPSILON,
-                0.0))
-
-    for (i, j), window in window_basic_fsts.items():
-        is_final_window = (i+j == num_tokens)
-        for k in window.states():
-            # add transitions inside the window FST
-            for tr in window.transitions(k):
-                result.add_transition(
-                    state_dict[(i, j, k)],
-                    hfst.HfstBasicTransition(
-                        state_dict[(i, j, tr.get_target_state())],
-                        tr.get_input_symbol(),
-                        tr.get_output_symbol(),
-                        tr.get_weight()))
-            if window.is_final_state(k):
-                if is_final_window:      # add a transition to the final state
-                    result.add_transition(
-                        state_dict[(i, j, k)],
-                        hfst.HfstBasicTransition(
-                            1,
-                            hfst.EPSILON,
-                            hfst.EPSILON,
-                            window.get_final_weight(k)))
-                else:                   # add transitions to next windows
-                    new_i = i+j
-                    for new_j in range(1, max_window_size+1):
-                        if new_i+new_j <= num_tokens:
-                            result.add_transition(
-                                state_dict[(i, j, k)],
-                                hfst.HfstBasicTransition(
-                                    state_dict[(new_i, new_j, 0)],
-                                    ' ',
-                                    ' ',
-                                    window.get_final_weight(k)))
-
-    result = hfst.HfstTransducer(result)
-    result.minimize()
 
     t2 = time.time()
     logging.debug('Recombining time: {}s'.format(t2-t1))

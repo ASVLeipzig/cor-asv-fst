@@ -2,7 +2,6 @@ from os import listdir
 import os.path
 
 import argparse
-import hfst
 import logging
 import tempfile
 import multiprocessing as mp
@@ -11,42 +10,15 @@ import pynini
 from ..lib.sliding_window import \
     lexicon_to_window_fst, lattice_shortest_path, process_string
 from ..lib.helper import \
-    save_transducer, load_transducer, load_pairs_from_file, \
-    load_pairs_from_dir, save_pairs_to_file, save_pairs_to_dir
+    load_pairs_from_file, load_pairs_from_dir, \
+    save_pairs_to_file, save_pairs_to_dir
 
 # globals (for painless cow-semantic shared memory fork-based multiprocessing)
 model = {}
 gl_config = {}
-    
-
-def prepare_composition(lexicon_transducer, error_transducer, result_num, rejection_weight):
-    # write lexicon and error transducer files in OpenFST format
-    # (cannot use one file for both with OpenFST::Read)
-    result = None
-    with tempfile.NamedTemporaryFile(prefix='cor-asv-fst-sw-error') as error_f:
-        with tempfile.NamedTemporaryFile(prefix='cor-asv-fst-sw-lexicon') as lexicon_f:
-            save_transducer(
-                error_f.name, error_transducer, hfst_format=False,
-                type=hfst.ImplementationType.TROPICAL_OPENFST_TYPE)
-            save_transducer(
-                lexicon_f.name, lexicon_transducer, hfst_format=False,
-                type=hfst.ImplementationType.TROPICAL_OPENFST_TYPE)
-            
-            result = (pynini.arcsort(pynini.Fst.read(error_f.name)),
-                      pynini.arcsort(pynini.Fst.read(lexicon_f.name)))
-            # result = pyComposition(
-            #     error_f.name, lexicon_f.name,
-            #     result_num, rejection_weight)
-    return result
 
 
 def prepare_model(lexicon_file, error_model_file, **kwargs):
-    # lexicon_fst = load_transducer(lexicon_file)
-    # error_fst = load_transducer(error_model_file)
-    # window_fst = lexicon_to_window_fst(\
-    #     lexicon_fst, kwargs['words_per_window'])
-    # result = prepare_composition(\
-    #     window_fst, error_fst, kwargs['result_num'], kwargs['rejection_weight'])
     lexicon_fst = pynini.Fst.read(lexicon_file)
     window_fst = lexicon_to_window_fst(lexicon_fst, kwargs['words_per_window'])
     window_fst.arcsort()
