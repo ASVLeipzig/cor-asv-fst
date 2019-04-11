@@ -5,7 +5,6 @@ from paired OCR / ground truth text data.
 
 import difflib
 import math
-from nltk import ngrams
 import pynini
 
 from .helper import escape_for_pynini
@@ -13,6 +12,11 @@ from .helper import escape_for_pynini
 # gap/epsilon needs to be a character so we can easily make a transducer from it,
 #             but it must not ever occur in input
 GAP_ELEMENT = u' ' # (nbsp) # '\0' # (nul breaks things in libhfst)
+
+
+def ngrams(seq, n):
+    return [tuple(seq[i:i+n]) for i in range(len(seq)-n+1)]
+
 
 def get_confusion_dicts(gt_dict, raw_dict, max_n):
     """
