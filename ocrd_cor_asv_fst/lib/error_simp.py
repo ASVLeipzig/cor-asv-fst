@@ -2,12 +2,7 @@
 Create error correcting string transducers trained 
 from paired OCR / ground truth text data.
 """
-from io import open
-import os
-import argparse
 import math
-import csv
-
 from nltk import ngrams
 import pynini
 

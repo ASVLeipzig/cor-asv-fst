@@ -1,9 +1,5 @@
-from os import listdir
-import os.path
-
 import argparse
 import logging
-import tempfile
 import multiprocessing as mp
 import pynini
 

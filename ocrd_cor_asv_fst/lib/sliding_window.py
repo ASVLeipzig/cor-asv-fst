@@ -1,7 +1,6 @@
 import logging
 from operator import itemgetter
 import pynini
-import tempfile
 import time
 
 from .helper import escape_for_pynini
