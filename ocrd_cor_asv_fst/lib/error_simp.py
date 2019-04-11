@@ -10,6 +10,7 @@ import csv
 
 import hfst
 from nltk import ngrams
+import pynini
 
 # from alignment.sequence import Sequence
 # import alignment
@@ -22,7 +23,7 @@ import difflib
 #             but it must not ever occur in input
 GAP_ELEMENT = u' ' # (nbsp) # '\0' # (nul breaks things in libhfst)
 
-from .helper import create_dict
+from .helper import create_dict, escape_for_pynini
 
 def get_confusion_dicts(gt_dict, raw_dict, max_n):
     """
@@ -220,75 +221,26 @@ def read_frequency_list(filename):
     return freq_list
 
 
-def transducer_from_list(confusion_list, frequency_class=False, weight_threshold=7.0, identity_transitions=False):
+def transducer_from_list(confusion_list, weight_threshold=7.0, identity_transitions=False):
     """
     Convert a list of tuples: input_gram, output_gram, relative_frequency,
     into a weighted transducer performing the given transductions with 
     the encountered probabilities. 
-    If frequency_class is True, then assume frequency classes/ranks are given
-    instead of the relative frequencies, so no logarithm of the values
-    will be performed for obtaining the weight.
     If identity_transitions is True, then keep non-edit transitions.
     If weight_threshold is given, then prune away those transitions with 
     a weight higher than that.
     """
-    
-    if frequency_class:
-        #confusion_list_log = list(map(lambda x: (x[0], x[1], x[2]), confusion_list))
-        confusion_list_log = confusion_list
-    else:
-        confusion_list_log = list(map(lambda x: (x[0], x[1], -math.log(x[2])), confusion_list))
 
-    confusion_fst = hfst.HfstBasicTransducer()
-    # not as good as using .substitute() afterwards: tokenizer based...
-    # tok = hfst.HfstTokenizer()
-    # tok.add_skip_symbol(GAP_ELEMENT)
-    # not good at all (and slow): dictionary based...
-    # fst_dict = {}
-
-    for in_gram, out_gram, weight in confusion_list_log:
-
-        # prune away rare edits:
-        if weight_threshold and weight > weight_threshold:
-            continue
-        # filter out identity transitions (unless identity_transitions=True):
-        if in_gram == out_gram and not identity_transitions:
-            continue
-        # instr = in_gram.replace(GAP_ELEMENT, "")
-        # outstr = out_gram.replace(GAP_ELEMENT, "")
-        # # filter out ε-to-ε transitions:
-        # if not instr and not outstr:
-        #     continue
-        # # avoid hfst error 'Empty word.':
-        # if not instr:
-        #     instr = hfst.EPSILON
-        # if not outstr:
-        #     outstr = hfst.EPSILON
-        # fst_dict[instr] = fst_dict.setdefault(instr, []) + [(outstr, weight)]
-        # much faster than hfst.fst(dict):
-        #confusion_fst.disjunct(tok.tokenize(in_gram, out_gram), weight)
-        # tokenize makes suboptimal aligments:
-        confusion_fst.disjunct(tuple(zip(in_gram, out_gram)), weight)
-    
-    #print('creating confusion fst for %d input n-grams' % len(fst_dict))
-    #confusion_fst = hfst.fst(fst_dict) # does not respect epsilon/gap and multi-character symbols (for flags at runtime)
-    # maybe we can keep this approach with hfst.tokenized_fst()?
-    confusion_fst.substitute(GAP_ELEMENT, hfst.EPSILON, input=True, output=True)
-
-    confusion_fst = hfst.HfstTransducer(confusion_fst)
-    return confusion_fst
-
-
-def optimize_error_transducer(error_transducer):
-    """Optimize error_transducer by minimizing, removing epsilon und
-    pushing weights to start."""
-
-    # TODO: Weights should not be at the start, but at the actual character
-    # that is modified to ensure that the weights are local.
-
-    error_transducer.minimize()
-    error_transducer.remove_epsilons()
-    error_transducer.push_weights_to_start()
+    mappings = []
+    for in_str, out_str, relfreq in confusion_list:
+        ilabel = escape_for_pynini(in_str).replace(GAP_ELEMENT, '')
+        olabel = escape_for_pynini(out_str).replace(GAP_ELEMENT, '')
+        weight = -math.log(relfreq)
+        if (identity_transitions or ilabel != olabel) \
+                and (ilabel or olabel) \
+                and weight <= weight_threshold:
+            mappings.append((ilabel, olabel, str(weight)))
+    return pynini.string_map(mappings)
 
 
 def is_punctuation_edit(raw_char, gt_char):
@@ -344,36 +296,49 @@ def compile_single_error_transducer(confusion_dict, preserve_punct=False):
         confusion_list = list(filter(no_punctuation_edits, confusion_list))
     # create (non-complete) error_transducer and optimize it
     tr = transducer_from_list(confusion_list)
-    optimize_error_transducer(tr)
+    tr.optimize()
     return tr
 
 
 def combine_error_transducers(transducers, max_context, max_errors):
+
+    def _universal_acceptor(symbol_table):
+        fst = pynini.epsilon_machine()
+        fst.set_input_symbols(symbol_table)
+        fst.set_output_symbols(symbol_table)
+        for x, y in symbol_table:
+            if x > 0:
+                fst.add_arc(0, pynini.Arc(x, x, 0, 0))
+        return fst
+
     contexts = []
     for n in range(1,max_context+1):
         for m in range(1,n+1):
             contexts.append(list(range(m,n+1)))
     
-    # FIXME: make proper back-off transducer
+    # FIXME refactor the merging of symbol tables into a separate function
+    symtab = pynini.SymbolTable()
+    for t in transducers:
+        symtab = pynini.merge_symbol_table(symtab, t.input_symbols())
+        symtab = pynini.merge_symbol_table(symtab, t.output_symbols())
+    for t in transducers:
+        t.relabel_tables(new_isymbols=symtab, new_osymbols=symtab)
     
-    acceptor = hfst.regex('?*')
+    acceptor = _universal_acceptor(symtab)
     combined_transducers_dicts = []
     for context in contexts:
         print('Context: ', context)
-        one_error = hfst.empty_fst()
+        one_error = pynini.Fst()
         for n in context:
-            one_error.disjunct(transducers[n-1])
+            one_error.union(transducers[n-1])
         
-        # TODO: find out why both minimize and minimize+remove_epsilons makes
-        #       FSTs extremely huge and slow at runtime
-        # TODO: find out why incremental concat+disjoin with previous ET
-        #       (starting with all-acceptor) is larger and slower
         for num_errors in range(1, max_errors+1):
             print('Number of errors:', num_errors)
             result_tr = acceptor.copy()
-            result_tr.concatenate(one_error)
-            result_tr.repeat_n_minus(num_errors)
-            result_tr.concatenate(acceptor)
+            result_tr.concat(one_error)
+            result_tr.closure(0, num_errors)
+            result_tr.concat(acceptor)
+            result_tr.arcsort()
             combined_transducers_dicts.append({
                 'max_error' : num_errors,
                 'context' : ''.join(map(str, context)),

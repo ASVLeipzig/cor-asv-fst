@@ -125,7 +125,7 @@ def main():
         tr = lexicon_to_fst(\
             lexicon, punctuation=args.punctuation,
             added_word_cost=args.lexicon_added_word_cost)
-        save_transducer(args.lexicon_file, tr)
+        tr.write(args.lexicon_file)
 
     def _train_simple_error_model(args):
         training_pairs = _load_training_pairs(args)
@@ -154,7 +154,8 @@ def main():
         for tr_dict in combined_tr_dicts:
             if tr_dict['max_error'] == args.max_errors and \
                     tr_dict['context'] == target_context:
-                save_transducer(args.error_model_file, tr_dict['transducer'])
+                # save_transducer(args.error_model_file, tr_dict['transducer'])
+                tr_dict['transducer'].write(args.error_model_file)
 
     def _train_st_error_model(args):
         # FIXME implement

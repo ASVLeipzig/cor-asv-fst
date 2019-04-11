@@ -3,6 +3,17 @@ import logging
 import math
 from os import listdir
 import os.path
+import pynini
+
+
+def escape_for_pynini(s):
+    '''
+    Escapes a string for the usage in pynini. The following characters are
+    prepended with a backslash:
+    - the opening and closing square bracket,
+    - the backslash itself.
+    '''
+    return s.replace('\\', '\\\\').replace('[', '\\[').replace(']', '\\]')
 
 
 def save_transducer(filename, transducer, **kwargs):
@@ -194,7 +205,9 @@ def transducer_from_dict(dictionary):
     Given a dictionary of strings and weights, build a transducer accepting
     those strings with given weights.
     '''
-    return hfst.fst(list(dictionary.items()))
+    return pynini.string_map(\
+        (escape_for_pynini(k), escape_for_pynini(k), str(w)) \
+        for k, w in dictionary.items())
 
 
 def save_transducer_from_txt(input_txt, output_hfst):

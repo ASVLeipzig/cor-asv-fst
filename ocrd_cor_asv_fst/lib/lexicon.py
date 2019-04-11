@@ -166,25 +166,24 @@ def lexicon_to_fst(lexicon, punctuation='bracket', added_word_cost=0):
 
     # in the lexicon dict, numbers are counted as sequences of 1
     # thus, they are replaced by any possible number of the according length
-    words_fst.substitute(('1', '1'), get_digit_tuples())
+    # FIXME restore converting digits to ones
+    # words_fst.substitute(('1', '1'), get_digit_tuples())
 
     if punctuation == 'bracket':
         # TODO compounds
-        open_bracket_fst.optionalize()
-        close_bracket_fst.optionalize()
-        punctuation_fst.optionalize()
-        result = open_bracket_fst
-        result.concatenate(words_fst)
-        result.concatenate(punctuation_fst)
-        result.concatenate(close_bracket_fst)
+        result = open_bracket_fst.ques
+        result.concat(words_fst)
+        result.concat(punctuation_fst.ques)
+        result.concat(close_bracket_fst.ques)
 
         # standardize the umlaut characters
-        precompose_transducer = hfst.regex(
-            '[a\u0364:ä|o\u0364:ö|u\u0364:ü|A\u0364:Ä|O\u0364:Ö|U\u0364:Ü|?]*')
-        result.compose(precompose_transducer)
-        result.output_project()
-        result.minimize()
-        result.push_weights_to_start()
+        # FIXME restore the umlaut standardization
+        # precompose_transducer = hfst.regex(
+        #     '[a\u0364:ä|o\u0364:ö|u\u0364:ü|A\u0364:Ä|O\u0364:Ö|U\u0364:Ü|?]*')
+        # result.compose(precompose_transducer)
+        result.project(project_output=True)
+        result.optimize(compute_props=True)
+        result.push()
         return result
     else:
         # FIXME implement further punctuation methods

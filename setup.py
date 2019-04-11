@@ -37,6 +37,7 @@ setup(
     package_data={
         '': ['*.json', '*.yml', '*.yaml'],
     },
+    test_suite='tests',
     entry_points={
         'console_scripts': [
             'cor-asv-fst-train=ocrd_cor_asv_fst.scripts.train:main',
