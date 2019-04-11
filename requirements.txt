@@ -2,7 +2,6 @@ click >= 7.0
 nltk
 six
 numpy
-alignment
 editdistance
 spacy
 networkx >= 2.0

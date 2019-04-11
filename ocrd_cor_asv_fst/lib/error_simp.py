@@ -2,22 +2,17 @@
 Create error correcting string transducers trained 
 from paired OCR / ground truth text data.
 """
+
+import difflib
 import math
 from nltk import ngrams
 import pynini
 
-# from alignment.sequence import Sequence
-# import alignment
-# alignment.sequence.GAP_ELEMENT = ' '
-# from alignment.sequence import GAP_ELEMENT
-# from alignment.vocabulary import Vocabulary
-# from alignment.sequencealigner import SimpleScoring, StrictGlobalSequenceAligner
-import difflib
+from .helper import escape_for_pynini
+
 # gap/epsilon needs to be a character so we can easily make a transducer from it,
 #             but it must not ever occur in input
 GAP_ELEMENT = u' ' # (nbsp) # '\0' # (nul breaks things in libhfst)
-
-from .helper import escape_for_pynini
 
 def get_confusion_dicts(gt_dict, raw_dict, max_n):
     """
@@ -50,11 +45,8 @@ def get_confusion_dicts(gt_dict, raw_dict, max_n):
     
     matcher = difflib.SequenceMatcher(isjunk=None, autojunk=False) # disable "junk" detection heuristics (mainly for source code)
     
-    for gt_line, raw_line in corresponding_list: # difference_list
-    #for (gt_line, raw_line) in difference_list[1:100]:
+    for gt_line, raw_line in corresponding_list:
 
-        #print(gt_line)
-        #print(raw_line)
         if not gt_line or not raw_line:
             continue
         if GAP_ELEMENT in gt_line or GAP_ELEMENT in raw_line:
@@ -62,35 +54,8 @@ def get_confusion_dicts(gt_dict, raw_dict, max_n):
         
         # alignment of lines
 
-        # a = Sequence(raw_line)
-        # b = Sequence(gt_line)
-        # # create a vocabulary and encode the sequences
-        # v = Vocabulary()
-        # aEncoded = v.encodeSequence(a)
-        # bEncoded = v.encodeSequence(b)
-        # # create a scoring and align the sequences using global aligner
-        # scoring = SimpleScoring(2, -1)
-        # aligner = StrictGlobalSequenceAligner(scoring, -2)
-        # score = aligner.align(aEncoded, bEncoded)
-        # if score < -10 and score < 5-len(gt_line):
-        #     #print('ignoring bad OCR:')
-        #     #print(raw_line)
-        #     #print(gt_line)
-        #     continue
-        # score, encodeds = aligner.align(aEncoded, bEncoded, backtrace=True)
-        # if encodeds:
-        #     alignment = v.decodeSequenceAlignment(encodeds[0]) # take only 1-best alignment (others are suboptimal)
-        #     #print(alignment)
-        #     #print('Alignment score:', alignment.score)
-        #     #print('Percent identity:', alignment.percentIdentity())
-
-        #     if alignment.percentIdentity() > 5: #alignment.percentIdentity() < 100:
-
         matcher.set_seqs(raw_line, gt_line)
         if matcher.quick_ratio() < 0.1 and len(gt_line) > 5:
-            #print('ignoring bad OCR:')            
-            #print(raw_line)
-            #print(gt_line)
             continue
         else:
             alignment = []
@@ -99,7 +64,6 @@ def get_confusion_dicts(gt_dict, raw_dict, max_n):
                     alignment.extend(zip(raw_line[raw_begin:raw_end], gt_line[gt_begin:gt_end]))
                 elif op == 'replace': # not really substitution:
                     delta = raw_end-raw_begin-gt_end+gt_begin
-                    #alignment.extend(zip(raw_line[raw_begin:raw_end] + [GAP_ELEMENT]*(-delta), gt_line[gt_begin:gt_end] + [GAP_ELEMENT]*(delta)))
                     if delta > 0: # replace+delete
                         alignment.extend(zip(raw_line[raw_begin:raw_end-delta], gt_line[gt_begin:gt_end]))
                         alignment.extend(zip(raw_line[raw_end-delta:raw_end], [GAP_ELEMENT]*(delta)))
@@ -132,9 +96,6 @@ def get_confusion_dicts(gt_dict, raw_dict, max_n):
                         
                         confusion_dicts[n][raw_string] = confusion_dicts[n].setdefault(raw_string, {})
                         confusion_dicts[n][raw_string][gt_string] = confusion_dicts[n][raw_string].setdefault(gt_string, 0) + 1
-    
-    #for i in [1, 2, 3]:
-    #    print(confusion_dicts[i].items())
     
     return confusion_dicts
 

@@ -1,18 +1,11 @@
 import argparse
-
-# from alignment.sequence import Sequence
-# import alignment
-# alignment.sequence.GAP_ELEMENT = 0 #"ε"
-# from alignment.vocabulary import Vocabulary
-# from alignment.sequencealigner import SimpleScoring, StrictGlobalSequenceAligner
-
-from difflib import SequenceMatcher # faster (and no memory/stack problems), but no customized distance metrics
-matcher = SequenceMatcher(isjunk=None, autojunk=False)
-GAP_ELEMENT = 0
-
-import editdistance # fastest (and no memory/stack problems), but no customized distance metrics and no alignment result
+from difflib import SequenceMatcher
+import editdistance
 
 from ..lib.helper import load_pairs_from_dir, load_pairs_from_file
+
+matcher = SequenceMatcher(isjunk=None, autojunk=False)
+GAP_ELEMENT = 0
 
 
 def print_line(ocr, cor, gt):
@@ -22,25 +15,6 @@ def print_line(ocr, cor, gt):
 
 
 def get_best_alignment(l1, l2):
-    # scoring = SimpleScoring(2, -1)
-    # aligner = StrictGlobalSequenceAligner(scoring, -2)
-
-    # a = Sequence(l1)
-    # b = Sequence(l2)
-
-    # # create a vocabulary and encode the sequences
-    # vocabulary = Vocabulary()
-    # source_seq = vocabulary.encodeSequence(a)
-    # target_seq = vocabulary.encodeSequence(b)
-
-    # score = aligner.align(source_seq, target_seq)
-    # if score < 5-len(source_seq)/2:
-    #     return editdistance.eval(l1, l2), len(l2) # prevent stack/heap overflow with aligner
-    
-    # _, alignments = aligner.align(source_seq, target_seq, backtrace=True)
-    # a = vocabulary.decodeSequenceAlignment(alignments[0]) # best result
-
-    # #print(a)
     global matcher
     matcher.set_seqs(l1, l2)
 
@@ -51,8 +25,6 @@ def get_best_alignment(l1, l2):
                                   l2[l2_begin:l2_end]))
         elif op == 'replace': # not really substitution:
             delta = l1_end-l1_begin-l2_end+l2_begin
-            #alignment1.extend(zip(l1[l1_begin:l1_end] + [GAP_ELEMENT]*(-delta),
-            #                      l2[l2_begin:l2_end] + [GAP_ELEMENT]*(delta)))
             if delta > 0: # replace+delete
                 alignment1.extend(zip(l1[l1_begin:l1_end-delta],
                                       l2[l2_begin:l2_end]))
@@ -87,16 +59,11 @@ def get_adjusted_distance(l1, l2):
     d = 0 # distance
 
     umlauts = {u"ä": "a", u"ö": "o", u"ü": "u"} # for example
-    #umlauts = {}
 
     source_umlaut = ''
     target_umlaut = ''
 
-    #for source_sym, target_sym in zip(a.first, a.second):
     for source_sym, target_sym in alignment1:
-
-        #print(source_sym, target_sym)
-
         if source_sym == target_sym:
             if source_umlaut: # previous source is umlaut non-error
                 source_umlaut = False # reset
