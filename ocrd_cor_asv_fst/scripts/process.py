@@ -8,7 +8,6 @@ import tempfile
 import multiprocessing as mp
 import pynini
 
-from ..lib.extensions.composition import pyComposition
 from ..lib.sliding_window import \
     lexicon_to_window_fst, lattice_shortest_path, process_string
 from ..lib.helper import \

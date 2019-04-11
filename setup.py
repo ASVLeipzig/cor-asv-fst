@@ -8,14 +8,8 @@ Installs:
 """
 import codecs
 
-from setuptools import Extension, setup, find_packages
-from distutils.sysconfig import get_config_vars
-from Cython.Distutils import build_ext
+from setuptools import setup, find_packages
 
-cfg_vars = get_config_vars()
-for key, value in cfg_vars.items():
-    if type(value) == str:
-        cfg_vars[key] = value.replace("-Wstrict-prototypes", "")
 install_requires = open('requirements.txt').read().split('\n')
 
 with codecs.open('README.md', encoding='utf-8') as f:
@@ -23,7 +17,7 @@ with codecs.open('README.md', encoding='utf-8') as f:
 
 setup(
     name='ocrd_cor_asv_fst',
-    version='0.1.1',
+    version='0.2.0',
     description='OCR post-correction with error/lexicon Finite State '
                 'Transducers and character-level LSTMs',
     long_description=README,
@@ -45,15 +39,5 @@ setup(
             'cor-asv-fst-evaluate=ocrd_cor_asv_fst.scripts.evaluate:main',
             'ocrd-cor-asv-fst-process=ocrd_cor_asv_fst.wrapper.cli:ocrd_cor_asv_fst',
         ]
-    },
-    ext_modules=[
-        Extension(
-            "ocrd_cor_asv_fst.lib.extensions.composition",
-            sources=[
-                "ocrd_cor_asv_fst/lib/extensions/composition.pyx",
-                "ocrd_cor_asv_fst/lib/extensions/composition_cpp.cpp"],
-            libraries=["fst", "dl"],
-            language="c++")
-        ],
-    cmdclass = {'build_ext': build_ext},
+    }
 )

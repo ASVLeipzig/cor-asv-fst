@@ -6,7 +6,6 @@ import tempfile
 import time
 
 from .helper import escape_for_pynini, load_transducer, save_transducer
-from .extensions.composition import pyComposition
 
 
 def _print_paths(paths):
@@ -40,24 +39,6 @@ def _hfst_create_window(tokens):
     strings).
     '''
     return hfst.fst(' '.join(tokens))
-
-
-def process_window_with_openfst(input_str, window_fst, model, rejection_weight=10):
-    '''
-    Compose a window input automaton with the model using OpenFST
-    composition (lazy composition of error .o. lexicon).
-    '''
-    t1 = time.time()
-    result_fst = None
-    with tempfile.NamedTemporaryFile(prefix='cor-asv-fst-sw-input') as f:
-        save_transducer(
-            f.name, window_fst, hfst_format=False, 
-            type=hfst.ImplementationType.TROPICAL_OPENFST_TYPE)
-        filename = model.correct_transducer_file(f.name)
-    result_fst = load_transducer(filename)
-    t2 = time.time()
-    logging.debug('Processing time: {}s'.format(t2-t1))
-    return result_fst
 
 
 def process_window_with_hfst(input_str, window_fst, model, n=10, rejection_weight=10):
@@ -113,9 +94,7 @@ def process_window_with_pynini(input_str, window_fst, model, n=10, rejection_wei
 
 def process_window(input_str, window_fst, model, rejection_weight=10):
     '''Compose a window input automaton with the model.'''
-    if isinstance(model, pyComposition):
-        return process_window_with_openfst(input_str, window_fst, model, rejection_weight)
-    elif isinstance(model, tuple):
+    if isinstance(model, tuple):
         return process_window_with_pynini(input_str, window_fst, model, rejection_weight)
     else:
         raise RuntimeError('Unknown model type: {}'.format(type(model)))
