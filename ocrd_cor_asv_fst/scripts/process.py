@@ -29,6 +29,7 @@ def correct_string(basename, input_str):
     logging.debug('input_str:  %s', input_str)
     lattice = process_string(
         input_str, model,
+        beam_width=gl_config['beam_width'],
         rejection_weight=gl_config['rejection_weight'])
     output_str = lattice_shortest_path(lattice)
     logging.debug('output_str: %s', output_str)
@@ -80,6 +81,9 @@ def parse_arguments():
         '-R', '--result-num', metavar='NUM', type=int, default=10,
         help='result paths per window')
     parser.add_argument(
+        '-B', '--beam-width', metavar='WEIGHT', type=float, default=5,
+        help='beam width for pruning the hypotheses space')
+    parser.add_argument(
         '-J', '--rejection-weight', metavar='WEIGHT', type=float, default=1.5,
         help='transition weight for unchanged input window')
     parser.add_argument(
@@ -116,6 +120,7 @@ def main():
         'apply_lm' : args.apply_lm,
         'output_suffix' : args.output_suffix,
         'rejection_weight' : args.rejection_weight,
+        'beam_width' : args.beam_width,
     }
 
     # check the validity of parameters specifying input/output

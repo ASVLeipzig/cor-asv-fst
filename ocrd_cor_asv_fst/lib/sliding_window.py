@@ -31,7 +31,8 @@ def create_window(tokens):
     return result
 
 
-def process_window(input_str, window_fst, model, n=10, rejection_weight=1.5):
+def process_window(input_str, window_fst, model,
+                   beam_width=5, rejection_weight=1.5):
     '''
     Compose a window input automaton with the model.
     '''
@@ -42,7 +43,7 @@ def process_window(input_str, window_fst, model, n=10, rejection_weight=1.5):
     for fst in model:
         window_fst = pynini.compose(window_fst, fst)
         window_fst.project(project_output=True)
-        window_fst.prune(weight=5)
+        window_fst.prune(weight=beam_width)
         window_fst.optimize()
     t3 = time.time()
     logging.debug('- composition: {}s'.format(t3-t1))
@@ -110,7 +111,8 @@ def recombine_windows(window_fsts):
     return result
 
 
-def process_string(string, model, max_window_size=2, rejection_weight=10):
+def process_string(string, model, max_window_size=2,
+                   beam_width=5, rejection_weight=10):
     # create windows from the input string
     windows = {}
     tokens = split_input_string(string)
@@ -123,6 +125,7 @@ def process_string(string, model, max_window_size=2, rejection_weight=10):
         windows[(i,j)] = process_window(
             ' '.join(tokens[i:i+j]),
             windows[(i,j)], model,
+            beam_width=beam_width,
             rejection_weight=rejection_weight)
         _print_paths(windows[(i,j)].paths())
     # recombine the windows
