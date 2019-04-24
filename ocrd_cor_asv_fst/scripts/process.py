@@ -78,17 +78,11 @@ def parse_arguments():
         '-W', '--words-per-window', metavar='NUM', type=int, default=3,
         help='maximum number of words in one window')
     parser.add_argument(
-        '-R', '--result-num', metavar='NUM', type=int, default=10,
-        help='result paths per window')
-    parser.add_argument(
         '-B', '--beam-width', metavar='WEIGHT', type=float, default=5,
         help='beam width for pruning the hypotheses space')
     parser.add_argument(
         '-J', '--rejection-weight', metavar='WEIGHT', type=float, default=1.5,
         help='transition weight for unchanged input window')
-    parser.add_argument(
-        '-A', '--apply-lm', action='store_true', default=False,
-        help='also compose with n-gram language model for rescoring')
     parser.add_argument(
         '-Q', '--processes', metavar='NUM', type=int, default=1,
         help='number of processes to use in parallel')
@@ -116,8 +110,6 @@ def main():
     args = parse_arguments()
     logging.basicConfig(level=logging.getLevelName(args.log_level))
     gl_config = {
-        'result_num' : args.result_num,
-        'apply_lm' : args.apply_lm,
         'output_suffix' : args.output_suffix,
         'rejection_weight' : args.rejection_weight,
         'beam_width' : args.beam_width,
@@ -138,10 +130,7 @@ def main():
     model = prepare_model(
         args.lexicon_file,
         args.error_model_file,
-        apply_lm = args.apply_lm,
-        words_per_window = args.words_per_window,
-        rejection_weight = args.rejection_weight,
-        result_num = args.result_num)
+        words_per_window = args.words_per_window)
 
     # load input data
     pairs = load_pairs_from_file(args.input_file) \
