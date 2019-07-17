@@ -3,6 +3,8 @@ import logging
 import multiprocessing as mp
 import pynini
 
+from ocrd_keraslm.lib import Rater
+
 from ..lib.latticegen import FSTLatticeGenerator
 from ..lib.helper import \
     load_pairs_from_file, load_pairs_from_dir, \
@@ -17,15 +19,33 @@ PROCESSOR = None
 class PlaintextProcessor:
     # TODO docstrings
 
-    def __init__(self, latticegen):
+    def __init__(self, latticegen, lm):
         self.latticegen = latticegen
+        self.lm = lm
 
     def correct_string(self, input_str):
         logging.debug('input_str:  %s', input_str)
         lattice = self.latticegen.lattice_from_string(input_str)
-        output_str = lattice_shortest_path(lattice)
+        output_str = None
+        if self.lm is not None:
+            path = self._lm_find_best_path(lattice)
+            output_str = ' '.join(p[1].Unicode for p in path)
+        else:
+            output_str = lattice_shortest_path(lattice)
         logging.debug('output_str: %s', output_str)
         return output_str
+
+    def _lm_find_best_path(self, lattice):
+        path, entropy, traceback = self.lm.rate_best(
+            lattice, 0, max(lattice.nodes()),
+            start_traceback = None,
+            context = [0],
+            lm_weight = 1,
+            beam_width = 3,
+            beam_clustering_dist = 5)
+        path, entropy, traceback = \
+            self.lm.next_path(traceback[0], ([], traceback[1]))
+        return path
 
 
 # needs to be global for multiprocessing
@@ -56,6 +76,9 @@ def parse_arguments():
     parser.add_argument(
         '-e', '--error-model-file', metavar='FILE', type=str, default=None,
         help='file containing the error model transducer')
+    parser.add_argument(
+        '-m', '--language-model-file', metavar='FILE', type=str, default=None,
+        help='file containing the language model')
     parser.add_argument(
         '-d', '--directory', metavar='PATH', default=None,
         help='directory for input and output files')
@@ -117,13 +140,24 @@ def main():
         raise RuntimeError('No output file speficied! You have to specify '
                            'either -o or -O and the data directory.')
 
+    using_lm = (args.language_model_file is not None)
     latticegen = FSTLatticeGenerator(
         args.lexicon_file,
         args.error_model_file,
+        lattice_format   = 'networkx' if using_lm else 'fst',
         words_per_window = args.words_per_window,
         rejection_weight = args.rejection_weight,
         beam_width       = args.beam_width)
-    PROCESSOR = PlaintextProcessor(latticegen)
+    lm = None
+    if using_lm:
+        lm = Rater(logger=logging)
+        lm.load_config(args.language_model_file)
+        # overrides for incremental mode necessary before compilation:
+        lm.stateful = False         # no implicit state transfer
+        lm.incremental = True       # but explicit state transfer
+        lm.configure()
+        lm.load_weights(args.language_model_file)
+    PROCESSOR = PlaintextProcessor(latticegen, lm)
 
     # load input data
     pairs = load_pairs_from_file(args.input_file) \
