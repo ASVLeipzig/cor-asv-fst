@@ -9,31 +9,41 @@ from ..lib.helper import \
     load_pairs_from_file, load_pairs_from_dir, \
     save_pairs_to_file, save_pairs_to_dir
 
+
 # globals (for painless cow-semantic shared memory fork-based multiprocessing)
-model = {}
-gl_config = {}
+PROCESSOR = None
 
 
-def prepare_model(lexicon_file, error_model_file, **kwargs):
-    lexicon_fst = pynini.Fst.read(lexicon_file)
-    window_fst = lexicon_to_window_fst(lexicon_fst, kwargs['words_per_window'])
-    window_fst.arcsort()
-    error_fst = pynini.Fst.read(error_model_file)
-    result = (error_fst, window_fst)
-    return result
+class PlaintextProcessor:
+    # TODO docstrings
+
+    def __init__(self, lexicon_file, error_model_file, **kwargs):
+        # load all transducers and build a model out of them
+        self.lexicon_fst = pynini.Fst.read(lexicon_file)
+        self.window_fst = lexicon_to_window_fst(
+            self.lexicon_fst,
+            kwargs['words_per_window'])
+        self.window_fst.arcsort()
+        self.error_fst = pynini.Fst.read(error_model_file)
+        self.rejection_weight = kwargs['rejection_weight']
+        self.beam_width = kwargs['beam_width']
+
+    def correct_string(self, input_str):
+        logging.debug('input_str:  %s', input_str)
+        lattice = process_string(
+            input_str,
+            (self.error_fst, self.window_fst),
+            beam_width       = self.beam_width,
+            rejection_weight = self.rejection_weight)
+        output_str = lattice_shortest_path(lattice)
+        logging.debug('output_str: %s', output_str)
+        return output_str
 
 
 # needs to be global for multiprocessing
 def correct_string(basename, input_str):
-    global model, gl_config
-    logging.debug('input_str:  %s', input_str)
-    lattice = process_string(
-        input_str, model,
-        beam_width=gl_config['beam_width'],
-        rejection_weight=gl_config['rejection_weight'])
-    output_str = lattice_shortest_path(lattice)
-    logging.debug('output_str: %s', output_str)
-    return basename, output_str
+    global PROCESSOR
+    return basename, PROCESSOR.correct_string(input_str)
 
 
 def parallel_process(input_pairs, num_processes):
@@ -52,7 +62,6 @@ def parse_arguments():
     parser = argparse.ArgumentParser(
         description='OCR post-correction ocrd-cor-asv-fst batch-processor '
                     'tool')
-    # TODO HERE
     parser.add_argument(
         '-l', '--lexicon-file', metavar='FILE', type=str, default=None,
         help='file containing the lexicon transducer')
@@ -104,16 +113,11 @@ def main():
     above-mentioned schemata.
     """
 
-    global model, gl_config
+    global PROCESSOR
     
     # parse command-line arguments and set up various parameters
     args = parse_arguments()
     logging.basicConfig(level=logging.getLevelName(args.log_level))
-    gl_config = {
-        'output_suffix' : args.output_suffix,
-        'rejection_weight' : args.rejection_weight,
-        'beam_width' : args.beam_width,
-    }
 
     # check the validity of parameters specifying input/output
     if args.input_file is None and \
@@ -125,12 +129,12 @@ def main():
         raise RuntimeError('No output file speficied! You have to specify '
                            'either -o or -O and the data directory.')
 
-    
-    # load all transducers and build a model out of them
-    model = prepare_model(
+    PROCESSOR = PlaintextProcessor(
         args.lexicon_file,
         args.error_model_file,
-        words_per_window = args.words_per_window)
+        words_per_window = args.words_per_window,
+        rejection_weight = args.rejection_weight,
+        beam_width       = args.beam_width)
 
     # load input data
     pairs = load_pairs_from_file(args.input_file) \
@@ -140,7 +144,7 @@ def main():
     # process
     results = parallel_process(pairs, args.processes) \
               if args.processes > 1 \
-              else [correct_string(basename, input_str) \
+              else [PROCESSOR.correct_string(basename, input_str) \
                     for basename, input_str in pairs]
 
     # save results
