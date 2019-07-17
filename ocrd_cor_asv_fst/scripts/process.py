@@ -3,11 +3,11 @@ import logging
 import multiprocessing as mp
 import pynini
 
-from ..lib.sliding_window import \
-    lexicon_to_window_fst, lattice_shortest_path, process_string
+from ..lib.latticegen import FSTLatticeGenerator
 from ..lib.helper import \
     load_pairs_from_file, load_pairs_from_dir, \
     save_pairs_to_file, save_pairs_to_dir
+from ..lib.sliding_window import lattice_shortest_path
 
 
 # globals (for painless cow-semantic shared memory fork-based multiprocessing)
@@ -17,24 +17,12 @@ PROCESSOR = None
 class PlaintextProcessor:
     # TODO docstrings
 
-    def __init__(self, lexicon_file, error_model_file, **kwargs):
-        # load all transducers and build a model out of them
-        self.lexicon_fst = pynini.Fst.read(lexicon_file)
-        self.window_fst = lexicon_to_window_fst(
-            self.lexicon_fst,
-            kwargs['words_per_window'])
-        self.window_fst.arcsort()
-        self.error_fst = pynini.Fst.read(error_model_file)
-        self.rejection_weight = kwargs['rejection_weight']
-        self.beam_width = kwargs['beam_width']
+    def __init__(self, latticegen):
+        self.latticegen = latticegen
 
     def correct_string(self, input_str):
         logging.debug('input_str:  %s', input_str)
-        lattice = process_string(
-            input_str,
-            (self.error_fst, self.window_fst),
-            beam_width       = self.beam_width,
-            rejection_weight = self.rejection_weight)
+        lattice = self.latticegen.lattice_from_string(input_str)
         output_str = lattice_shortest_path(lattice)
         logging.debug('output_str: %s', output_str)
         return output_str
@@ -129,12 +117,13 @@ def main():
         raise RuntimeError('No output file speficied! You have to specify '
                            'either -o or -O and the data directory.')
 
-    PROCESSOR = PlaintextProcessor(
+    latticegen = FSTLatticeGenerator(
         args.lexicon_file,
         args.error_model_file,
         words_per_window = args.words_per_window,
         rejection_weight = args.rejection_weight,
         beam_width       = args.beam_width)
+    PROCESSOR = PlaintextProcessor(latticegen)
 
     # load input data
     pairs = load_pairs_from_file(args.input_file) \
@@ -144,7 +133,7 @@ def main():
     # process
     results = parallel_process(pairs, args.processes) \
               if args.processes > 1 \
-              else [PROCESSOR.correct_string(basename, input_str) \
+              else [(basename, PROCESSOR.correct_string(input_str)) \
                     for basename, input_str in pairs]
 
     # save results
