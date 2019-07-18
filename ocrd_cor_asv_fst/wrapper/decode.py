@@ -10,11 +10,10 @@ from ocrd_models.ocrd_page import \
 from ocrd_keraslm.lib import Rater
 
 from .config import OCRD_TOOL
-from ..lib.latticegen import create_window, process_window
-from ..scripts.process import prepare_model
+from ..lib.latticegen import create_window, FSTLatticeGenerator, process_window
 
 
-LOG = getLogger('processor.FSTCorrection')
+LOG = getLogger('processor.PageXMLProcessor')
 
 # enable pruning partial paths by history clustering
 BEAM_CLUSTERING_ENABLE = True
@@ -23,21 +22,24 @@ BEAM_CLUSTERING_ENABLE = True
 BEAM_CLUSTERING_DIST = 5
 
 
-class FSTCorrection(Processor):
+class PageXMLProcessor(Processor):
     
     def __init__(self, *args, **kwargs):
         kwargs['ocrd_tool'] = OCRD_TOOL['tools']['ocrd-cor-asv-fst-process']
         kwargs['version'] = OCRD_TOOL['version']
-        super(FSTCorrection, self).__init__(*args, **kwargs)
+        super(PageXMLProcessor, self).__init__(*args, **kwargs)
         if not hasattr(self, 'workspace') or not self.workspace:
             raise RuntimeError('no workspace specified!')
 
         # initialize the decoder
         LOG.info("Loading the correction models")
-        self.model = prepare_model(
+        self.latticegen = FSTLatticeGenerator(
             self.parameter['lexicon_file'],
             self.parameter['error_model_file'],
-            words_per_window = self.parameter['words_per_window'])
+            lattice_format   = 'networkx',
+            words_per_window = self.parameter['words_per_window'],
+            rejection_weight = self.parameter['rejection_weight'],
+            beam_width       = self.parameter['beam_width'])
 
         # initialize the language model
         self.rater = Rater(logger=LOG)
@@ -140,6 +142,7 @@ class FSTCorrection(Processor):
         # TODO currently: gets the text from the Word elements and returns
         # lines as lists of words;
         # needed: also get glyph alternatives
+        # FIXME code duplication! this should be done by FSTLatticeGenerator
         n_words = n_line.get_Word()
         tokens = self._line_to_tokens(n_line)
         return { (i, j) : (self._merge_word_nodes(n_words[i:i+j]),
@@ -174,7 +177,7 @@ class FSTCorrection(Processor):
         for (i, j), (ref, fst, tokens) in windows.items():
             LOG.debug('Processing window ({}, {})'.format(i, j))
             fst = process_window(
-                ' '.join(tokens), fst, self.model,
+                ' '.join(tokens), fst, (self.latticegen.error_fst, self.latticegen.window_fst),
                 beam_width=self.parameter['beam_width'],
                 rejection_weight=self.parameter['rejection_weight'])
             windows[(i, j)] = (ref, fst, tokens)

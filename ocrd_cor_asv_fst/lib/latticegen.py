@@ -221,3 +221,6 @@ class FSTLatticeGenerator:
             raise RuntimeError('Invaild lattice format: {}'\
                                .format(self.lattice_format))
 
+    def lattice_from_nodes(self, nodes):
+        raise NotImplementedError()
+
