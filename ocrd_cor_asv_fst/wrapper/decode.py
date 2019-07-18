@@ -10,7 +10,7 @@ from ocrd_models.ocrd_page import \
 from ocrd_keraslm.lib import Rater
 
 from .config import OCRD_TOOL
-from ..lib.sliding_window import create_window, process_window
+from ..lib.latticegen import create_window, process_window
 from ..scripts.process import prepare_model
 
 

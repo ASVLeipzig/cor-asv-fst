@@ -5,11 +5,10 @@ import pynini
 
 from ocrd_keraslm.lib import Rater
 
-from ..lib.latticegen import FSTLatticeGenerator
+from ..lib.latticegen import FSTLatticeGenerator, lattice_shortest_path
 from ..lib.helper import \
     load_pairs_from_file, load_pairs_from_dir, \
     save_pairs_to_file, save_pairs_to_dir
-from ..lib.sliding_window import lattice_shortest_path
 
 
 # globals (for painless cow-semantic shared memory fork-based multiprocessing)
