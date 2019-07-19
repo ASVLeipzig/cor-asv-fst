@@ -100,12 +100,14 @@ def convert_to_relative_freq(lexicon_dict, freq_threshold=2e-6): # /13 # 6e-6/12
     return lexicon_dict
 
 
-def transducer_from_dict(dictionary):
+def transducer_from_dict(dictionary, unweighted=False):
     '''
     Given a dictionary of strings and weights, build a transducer accepting
     those strings with given weights.
     '''
     return pynini.string_map(\
-        (escape_for_pynini(k), escape_for_pynini(k), str(w)) \
+        (escape_for_pynini(k),
+         escape_for_pynini(k),
+         str(w) if not unweighted else '0.0') \
         for k, w in dictionary.items())
 

@@ -141,7 +141,8 @@ def build_lexicon(lines):
     return lexicon
 
 
-def lexicon_to_fst(lexicon, punctuation='bracket', added_word_cost=0):
+def lexicon_to_fst(lexicon, punctuation='bracket', added_word_cost=0,
+                   unweighted=False):
     words_dict = convert_to_log_relative_freq(lexicon.words)
     # add `added_word_cost` to the cost of every word
     # (FIXME this is a dirty workaround to reproduce the approximate behaviour
@@ -151,13 +152,16 @@ def lexicon_to_fst(lexicon, punctuation='bracket', added_word_cost=0):
         logging.debug('adding {} to word costs'.format(added_word_cost))
         for w in words_dict:
             words_dict[w] += added_word_cost
-    words_fst = transducer_from_dict(words_dict)
+    words_fst = transducer_from_dict(words_dict, unweighted=unweighted)
     punctuation_fst = transducer_from_dict(
-        convert_to_log_relative_freq(lexicon.punctuation))
+        convert_to_log_relative_freq(lexicon.punctuation),
+        unweighted=unweighted)
     open_bracket_fst = transducer_from_dict(
-        convert_to_log_relative_freq(lexicon.opening_brackets))
+        convert_to_log_relative_freq(lexicon.opening_brackets),
+        unweighted=unweighted)
     close_bracket_fst = transducer_from_dict(
-        convert_to_log_relative_freq(lexicon.closing_brackets))
+        convert_to_log_relative_freq(lexicon.closing_brackets),
+        unweighted=unweighted)
 
     # in the lexicon dict, numbers are counted as sequences of 1
     # thus, they are replaced by any possible number of the according length

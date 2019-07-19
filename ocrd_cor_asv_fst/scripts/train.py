@@ -63,6 +63,10 @@ def parse_arguments():
     parser.add_argument(
         '--lexicon-added-word-cost', metavar='NUM', type=float, default=0,
         help='a constant to add to the weights of every word in lexicon')
+    parser.add_argument(
+        '--unweighted-lexicon', action='store_true', default=False,
+        help='train an unweighted lexicon (use for combining with a language '
+             'model)')
     # PARAMETERS FOR TRAINING THE ERROR MODEL
     parser.add_argument(
         '-T', '--error-model-type', metavar='MODEL', type=str,
@@ -124,7 +128,8 @@ def main():
         lexicon = build_lexicon(training_lines)
         tr = lexicon_to_fst(\
             lexicon, punctuation=args.punctuation,
-            added_word_cost=args.lexicon_added_word_cost)
+            added_word_cost=args.lexicon_added_word_cost,
+            unweighted=args.unweighted_lexicon)
         tr.write(args.lexicon_file)
 
     def _train_simple_error_model(args):
