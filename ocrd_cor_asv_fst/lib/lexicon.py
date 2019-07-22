@@ -64,10 +64,14 @@ def setup_spacy(use_gpu=False):
     return nlp
 
 
-def build_lexicon(lines):
+def build_lexicon(lines, _dict = None):
     '''
-    Create lexicon with frequencies from dict of lines. Words and
+    Create lexicon with frequencies from lines of plain text. Words and
     punctation marks are inserted into separate dicts.
+
+    The additional parameter `_dict` is a dictionary: type -> frequency.
+    If it is given, those types are additionally inserted into the
+    lexicon as words (without any preprocessing).
     '''
 
     # TODO: Bindestriche behandeln. Momentan werden sie abgetrennt vor dem
@@ -98,6 +102,26 @@ def build_lexicon(lines):
             logging.warning('Possible tokenization error: \'{}\''
                             .format(token.text))
 
+    def _add_token_to_lexicon(token, freq = 1):
+        _handle_problematic_cases(token)
+        if _is_opening_bracket(token):
+            lexicon.opening_brackets[token.text] += 1
+        elif _is_closing_bracket(token):
+            lexicon.closing_brackets[token.text] += 1
+        elif _is_punctuation(token):
+            lexicon.punctuation[token.text] += 1
+        else:
+            text = token.text.translate(umlauttrans)
+            if text.isdigit() or num_re.match(text):
+                text = len(text) * '1'
+            lexicon.words[text] += freq
+            # include also the (un)capitalized variant
+            recap = text.lower() \
+                    if text[0].isupper() \
+                    else text.capitalize()
+            if recap != text:
+                lexicon.words[recap] += freq
+
     lexicon = Lexicon(
         opening_brackets=defaultdict(lambda: 0),
         closing_brackets=defaultdict(lambda: 0),
@@ -109,37 +133,18 @@ def build_lexicon(lines):
     # ¹²³⁴⁵⁶⁷⁸⁹⁰ digits (maybe goes away with NFC?)
     num_re = re.compile('[0-9]{1,3}([,.]?[0-9]{3})*([.,][0-9]*)?')
     nlp = setup_spacy()
-    
-    # if isinstance(lines, dict):
-    #     lines = lines.values()
-    # elif hasattr(lines, '__iter__'): # accept generators
-    #     lines = map(itemgetter(1), lines)
-    # else:
-    #     raise RuntimeError('Creating lexicon failed: %s given, but dict or '
-    #                        'list expected' % type(lines))
 
+    # process the text lines
     for line in lines:
         if len(line) < MIN_LINE_LENGTH:
             continue
         for token in nlp(line):
-            _handle_problematic_cases(token)
-            if _is_opening_bracket(token):
-                lexicon.opening_brackets[token.text] += 1
-            elif _is_closing_bracket(token):
-                lexicon.closing_brackets[token.text] += 1
-            elif _is_punctuation(token):
-                lexicon.punctuation[token.text] += 1
-            else:
-                text = token.text.translate(umlauttrans)
-                if text.isdigit() or num_re.match(text):
-                    text = len(text) * '1'
-                lexicon.words[text] += 1
-                # include also the (un)capitalized variant
-                recap = text.lower() \
-                        if text[0].isupper() \
-                        else text.capitalize()
-                if recap != text:
-                    lexicon.words[recap] += 1
+            _add_token_to_lexicon(token)
+
+    # process the dictionary of words with frequencies
+    if _dict is not None:
+        for word, freq in _dict.items():
+            lexicon.words[word] += freq
 
     return lexicon
 

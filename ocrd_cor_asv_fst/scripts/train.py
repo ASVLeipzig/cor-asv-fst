@@ -6,7 +6,9 @@ from ..lib.lexicon import build_lexicon, lexicon_to_fst
 from ..lib.error_simp import \
     get_confusion_dicts, compile_single_error_transducer, \
     combine_error_transducers
-from ..lib.helper import load_pairs_from_file, load_pairs_from_dir
+from ..lib.helper import \
+    load_pairs_from_file, load_pairs_from_dir, load_lines_from_file, \
+    load_wordlist_from_file
 
 
 def parse_arguments():
@@ -113,19 +115,24 @@ def main():
                 args.directory, args.gt_suffix))
             return [(ocr_dict[key], gt_dict[key]) \
                     for key in set(ocr_dict) & set(gt_dict)]
+        else:
+            return []
 
     def _load_lexicon_training_data(args):
+        training_dict = None
         training_pairs = _load_training_pairs(args)
         training_lines = list(map(itemgetter(1), training_pairs))
         if args.corpus_file is not None:
-            logging.warning('Ignoring -c: corpus files are not supported yet!')
+            training_lines.extend(load_lines_from_file(args.corpus_file))
         if args.wordlist_file is not None:
-            logging.warning('Ignoring -w: wordlist files are not supported yet!')
-        return training_lines
+            training_dict = load_wordlist_from_file(args.wordlist_file)
+        if not training_lines and not training_dict:
+            logging.error('No training data supplied!')
+        return training_lines, training_dict
 
     def _train_lexicon(args):
-        training_lines = _load_lexicon_training_data(args)
-        lexicon = build_lexicon(training_lines)
+        training_lines, training_dict = _load_lexicon_training_data(args)
+        lexicon = build_lexicon(training_lines, training_dict)
         tr = lexicon_to_fst(\
             lexicon, punctuation=args.punctuation,
             added_word_cost=args.lexicon_added_word_cost,

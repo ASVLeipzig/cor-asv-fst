@@ -65,6 +65,33 @@ def load_pairs_from_dir(directory, suffix):
     return list(generate_content(directory, filenames))
 
 
+def load_lines_from_file(filename):
+    '''
+    Load text lines from file.
+    '''
+    lines = None
+    with open(filename) as fp:
+        lines = [line.rstrip() for line in fp]
+    return lines
+
+
+def load_wordlist_from_file(filename):
+    '''
+    Load wordlist from a CSV file (word <tab> frequency).
+    '''
+    result = {}
+    with open(filename) as fp:
+        for line in fp:
+            try:
+                word, freq = line.rstrip().split('\t')[:2]
+                result[word] = int(freq)
+            # ignore lines in wrong format
+            # (less than two columns, second column is not a number etc.)
+            except Exception:
+                pass
+    return result
+
+
 def save_pairs_to_file(pairs, filename):
     '''
     Save pairs of (line_ID, line) to a file.
