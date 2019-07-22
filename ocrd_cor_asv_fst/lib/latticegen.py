@@ -51,20 +51,29 @@ def process_window(input_str, window_fst, model,
         window_fst.optimize()
     t3 = time.time()
     logging.debug('- composition: {}s'.format(t3-t1))
+    # allow also identity for windows of length 1
+    # (with weight `rejection_weight`)
     if ' ' not in input_str:
-        # allow also identity for windows of length 1
-        # (with weight `rejection_weight`)
+        # The formula:
+        #    rejection_weight*(len(input_str)+2)
+        # means that rejection_weight*2 is the initial cost of having an OOV
+        # word (which is than more expensive with increasing length).
+        # While discovered by accident, this turned out to work well as
+        # a very naive OOV word model.
         window_fst.union(
             pynini.acceptor(
                 escape_for_pynini(input_str),
                 weight=rejection_weight*(len(input_str)+2)))
     t2 = time.time()
-    # logging.debug('states: {}'.format(window_fst.number_of_states()))
     logging.debug('Total processing time: {}s'.format(t2-t1))
     return window_fst
 
 
 def recombine_windows(window_fsts):
+    '''
+    Recombine processed window FSTs (containing hypotheses for a given
+    window) to a lattice, which is also represented as an FST.
+    '''
 
     def _label(pos, length):
         return 'WIN-{}-{}'.format(pos, length)
@@ -115,29 +124,12 @@ def recombine_windows(window_fsts):
     return result
 
 
-def process_string(string, model, max_window_size=2,
-                   beam_width=5, rejection_weight=10):
-    # create windows from the input string
-    windows = {}
-    tokens = split_input_string(string)
-    for i in range(len(tokens)):
-        for j in range(1, min(max_window_size+1, len(tokens)-i+1)):
-            windows[(i,j)] = create_window(tokens[i:i+j])
-    # compose each window with the model
-    for (i, j) in windows:
-        logging.debug('Processing window ({}, {})'.format(i, j))
-        windows[(i,j)] = process_window(
-            ' '.join(tokens[i:i+j]),
-            windows[(i,j)], model,
-            beam_width=beam_width,
-            rejection_weight=rejection_weight)
-        _print_paths(windows[(i,j)].paths())
-    # recombine the windows
-    final_fst = recombine_windows(windows)
-    return final_fst
-
-
 def lexicon_to_window_fst(lexicon_fst, words_per_window=2):
+    '''
+    Concatenate the lexicon FST `words_per_window` times, inserting
+    spaces in between. The resulting FST accepts up to
+    `words_per_window` words from the lexicon.
+    '''
     result = lexicon_fst.copy()
     if words_per_window == 1:
         return result
@@ -148,10 +140,23 @@ def lexicon_to_window_fst(lexicon_fst, words_per_window=2):
 
 
 def lattice_shortest_path(lattice_fst):
+    '''
+    Extract the shortest path (i.e. with the lowest weight) from a
+    lattice of hypotheses represented as an FST.
+    '''
     return pynini.shortestpath(lattice_fst).stringify()
 
 
 def combine_windows_to_graph(windows):
+    '''
+    Combine windows FSTs containing hypotheses for given windows to a
+    graph of hypotheses in `nx.DiGraph` format, with decoding
+    alternatives represented as `TextEquivType` at the edges. This is
+    suitable for decoding data supplied in PageXML input format.
+
+    The windows are passed as a dictionary:
+        (starting_position, length) -> window_fst
+    '''
     graph = nx.DiGraph()
     line_end_node = max(i+j for i, j in windows)
     graph.add_nodes_from(range(line_end_node + 1))
@@ -177,7 +182,18 @@ def combine_windows_to_graph(windows):
 
 
 class FSTLatticeGenerator:
-    # TODO docstrings
+    '''
+    This is the class responsible for generating lattices from input
+    strings using the FST error model and lexicon. The lattices may be
+    returned in two different output formats:
+    - FST -- This allows for very fast search of a best path. It is the
+             preferred format if no rescoring (with a language model) is
+             applied afterwards.
+    - networkx -- This returns the lattice as a `networkx.DiGraph`. It
+                  is slower, but allows for rescoring.
+    The output format has to be passed to the constructor, because
+    working with two formats simultaneously is never necessary.
+    '''
 
     def __init__(self, lexicon_file, error_model_file = None,
                  lattice_format = 'fst', **kwargs):
@@ -220,7 +236,4 @@ class FSTLatticeGenerator:
         else:
             raise RuntimeError('Invaild lattice format: {}'\
                                .format(self.lattice_format))
-
-    def lattice_from_nodes(self, nodes):
-        raise NotImplementedError()
 

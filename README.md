@@ -25,6 +25,11 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
+In addition to the requirements listed in `requirements.txt`, the tool
+requires the
+[pynini](http://www.opengrm.org/twiki/bin/view/GRM/Pynini)
+library, which has to be installed from source.
+
 ## Usage
 
 The package has two user interfaces:

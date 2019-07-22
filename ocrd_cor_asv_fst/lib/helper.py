@@ -7,8 +7,8 @@ import pynini
 
 def escape_for_pynini(s):
     '''
-    Escapes a string for the usage in pynini. The following characters are
-    prepended with a backslash:
+    Escapes a string for the usage in pynini. The following characters
+    are prepended with a backslash:
     - the opening and closing square bracket,
     - the backslash itself.
     '''
@@ -16,13 +16,19 @@ def escape_for_pynini(s):
 
 
 def get_filenames(directory, suffix):
-    """Return all filenames following the scheme <file_id>.<suffix> in the given directory."""
+    '''
+    Return all filenames following the scheme <file_id>.<suffix> in the
+    given directory.
+    '''
 
     return (f for f in listdir(directory) if f.endswith('.' + suffix))
 
 
 def generate_content(directory, filenames):
-    """Generate tuples of file basename and file content string for given filenames and directory."""
+    '''
+    Generate tuples of file basename and file content string for given
+    filenames and directory.
+    '''
 
     for filename in filenames:
         with open(os.path.join(directory, filename)) as f:
@@ -33,6 +39,9 @@ def generate_content(directory, filenames):
 
 
 def load_pairs_from_file(filename):
+    '''
+    Load pairs of (line_ID, line) from a file.
+    '''
     results = []
     with open(filename) as fp:
         for i, line in enumerate(fp, 1):
@@ -47,26 +56,45 @@ def load_pairs_from_file(filename):
 
 
 def load_pairs_from_dir(directory, suffix):
+    '''
+    Load pairs of (line_ID, line) from a file. Each text file ending
+    with `suffix` contains a line of text and the line ID is the file
+    name without the suffix.
+    '''
     filenames = get_filenames(directory, suffix)
     return list(generate_content(directory, filenames))
 
 
 def save_pairs_to_file(pairs, filename):
+    '''
+    Save pairs of (line_ID, line) to a file.
+    '''
     with open(filename, 'w+') as fp:
         for p in pairs:
             fp.write('\t'.join(p) + '\n')
 
 
 def save_pairs_to_dir(pairs, directory, suffix):
+    '''
+    Save pairs of (line_ID, line) to a directory.
+
+    See the docstring of `load_pairs_from_dir` for an explanation of the
+    format.
+    '''
     for basename, string in pairs:
         filename = basename + '.' + suffix
         with open(os.path.join(directory, filename), 'w+') as fp:
             fp.write(string)
 
 
-def convert_to_log_relative_freq(lexicon_dict, freq_threshold=2e-6): # /13 # 6e-6/12 # 1e-5/11.5
-    """Convert counts of dict: word -> count into dict with relative
-    frequencies: word -> relative_frequency."""
+def convert_to_log_relative_freq(lexicon_dict, freq_threshold=2e-6):
+    '''
+    Convert counts of dict: word -> count into dict with relative
+    frequencies: word -> relative_frequency.
+
+    The entries with relative frequency lower than `freq_threshold` are
+    dropped.
+    '''
 
     total_freq = sum(lexicon_dict.values())
     print('converting dictionary of %d tokens / %d types' % (total_freq, len(lexicon_dict)))
@@ -81,29 +109,10 @@ def convert_to_log_relative_freq(lexicon_dict, freq_threshold=2e-6): # /13 # 6e-
     return lexicon_dict
 
 
-def convert_to_relative_freq(lexicon_dict, freq_threshold=2e-6): # /13 # 6e-6/12 # 1e-5/11.5
-    """Convert counts of dict: word -> count into dict with relative
-    frequencies: word -> relative_frequency."""
-    # FIXME this function is deprecated -- remove as soon as no module uses it!
-
-    total_freq = sum(lexicon_dict.values())
-    print('converting dictionary of %d tokens / %d types' % (total_freq, len(lexicon_dict)))
-    for key in list(lexicon_dict.keys()):
-        abs_freq = lexicon_dict[key]
-        rel_freq = abs_freq / total_freq
-        if abs_freq <= 3 and rel_freq < freq_threshold:
-            print('pruning rare word form "%s" (%d/%f)' % (key, abs_freq, rel_freq))
-            del lexicon_dict[key]
-        else:
-            lexicon_dict[key] = rel_freq
-
-    return lexicon_dict
-
-
 def transducer_from_dict(dictionary, unweighted=False):
     '''
-    Given a dictionary of strings and weights, build a transducer accepting
-    those strings with given weights.
+    Given a dictionary of strings and weights, build a transducer
+    accepting those strings with given weights.
     '''
     return pynini.string_map(\
         (escape_for_pynini(k),

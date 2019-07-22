@@ -47,10 +47,12 @@ def get_best_alignment(l1, l2):
 
 
 def get_adjusted_distance(l1, l2):
-    """Calculate distance (as the number of edits) of strings l1 and l2 by aligning them.
-    The adjusted length and distance here means that diacritical characters are counted
-    as only one character. Thus, for each occurrence of such a character the
-    length is reduced by 1."""
+    '''
+    Calculate distance (as the number of edits) of strings l1 and l2 by
+    aligning them.  The adjusted length and distance here means that
+    diacritical characters are counted as only one character. Thus, for
+    each occurrence of such a character the length is reduced by 1.
+    '''
     alignment1 = get_best_alignment(l1, l2)
     
     # the following code ensures that diacritical characters are counted as
@@ -102,13 +104,13 @@ def get_adjusted_distance(l1, l2):
 
 
 def get_precision_recall(ocr, cor, gt):
-    """
-    Calculate number of true/false positive/negative edits of given OCR vs
-    GT and COR vs GT line by aligning them.
+    '''
+    Calculate number of true/false positive/negative edits of given OCR
+    vs GT and COR vs GT line by aligning them.
     
-    Return the true positive, true negative, false positive, false negative
-    counts as a tuple.
-    """
+    Return the true positive, true negative, false positive, false
+    negative counts as a tuple.
+    '''
 
     def _merge_alignments(al_1, al_2):
         '''

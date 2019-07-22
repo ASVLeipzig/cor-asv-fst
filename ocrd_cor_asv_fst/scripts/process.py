@@ -16,7 +16,12 @@ PROCESSOR = None
 
 
 class PlaintextProcessor:
-    # TODO docstrings
+    '''
+    Class responsible for complete processing of plaintext input:
+    - lattice generation using lib.latticegen.FSTLatticeGenerator,
+    - rescoring with a language model, if applicable,
+    - best path search in the lattice.
+    '''
 
     def __init__(self, latticegen, lm):
         self.latticegen = latticegen
@@ -114,14 +119,14 @@ def parse_arguments():
 
 
 def main():
-    """
+    '''
     Read OCR-ed lines:
     - either from files following the path scheme <directory>/<ID>.<suffix>,
       where each file contains one line of text,
     - or from a single, two-column file: <ID> <TAB> <line>.
     Correct each line and save output according to one of the two
     above-mentioned schemata.
-    """
+    '''
 
     global PROCESSOR
     

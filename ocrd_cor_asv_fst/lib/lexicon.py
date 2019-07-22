@@ -22,10 +22,11 @@ Lexicon = namedtuple(
 
 
 def get_digit_tuples():
-    """Gives tuple of all pairs of identical numbers.
-    This is used to replace the ('1', '1') transitions in the lexicon by
-    all possible numbers."""
-
+    '''
+    Gives tuple of all pairs of identical numbers. This is used to
+    replace the ('1', '1') transitions in the lexicon by all possible
+    numbers.
+    '''
     return tuple([(str(i), str(i)) for i in range(10)])
 
 
@@ -64,8 +65,10 @@ def setup_spacy(use_gpu=False):
 
 
 def build_lexicon(lines):
-    """Create lexicon with frequencies from dict of lines. Words and
-    punctation marks are inserted into separate dicts."""
+    '''
+    Create lexicon with frequencies from dict of lines. Words and
+    punctation marks are inserted into separate dicts.
+    '''
 
     # TODO: Bindestriche behandeln. Momentan werden sie abgetrennt vor dem
     # Hinzufügen zum Lexikon. Man müsste halbe Worte weglassen und

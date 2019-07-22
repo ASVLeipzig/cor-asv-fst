@@ -23,6 +23,10 @@ BEAM_CLUSTERING_DIST = 5
 
 
 class PageXMLProcessor(Processor):
+    '''
+    Class responsible for processing the input data in PageXML format
+    within the OCR-D workflow.
+    '''
     
     def __init__(self, *args, **kwargs):
         kwargs['ocrd_tool'] = OCRD_TOOL['tools']['ocrd-cor-asv-fst-process']
