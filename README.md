@@ -98,11 +98,14 @@ This tool applies a trained model to correct plaintext data on a line basis.
 The basic invocation is:
 
 ```shell
-cor-asv-fst-process -i INPUT_FILE -o OUTPUT_FILE -l LEXICON_FILE -e ERROR_MODEL_FILE
+cor-asv-fst-process -i INPUT_FILE -o OUTPUT_FILE -l LEXICON_FILE -e ERROR_MODEL_FILE (-m LM_FILE)
 ```
 
 `INPUT_FILE` is in the same format as for the training procedure. `OUTPUT_FILE`
 contains the post-correction results in the same format.
+
+`LM_FILE` is a `ocrd_keraslm` language model - if supplied, it is used for
+rescoring.
 
 #### `cor-asv-fst-evaluate`
 
