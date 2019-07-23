@@ -1,5 +1,6 @@
 import argparse
 import logging
+import numpy as np
 from operator import itemgetter
 
 from ..lib.lexicon import build_lexicon, lexicon_to_fst
@@ -9,6 +10,9 @@ from ..lib.error_simp import \
 from ..lib.helper import \
     load_pairs_from_file, load_pairs_from_dir, load_lines_from_file, \
     load_wordlist_from_file
+from ..lib.error_st import \
+    fit, compile_transducer, load_ngrams, matrix_to_mappings, save_ngrams, \
+    training_pairs_to_ngrams
 
 
 def parse_arguments():
@@ -98,6 +102,15 @@ def parse_arguments():
     parser.add_argument(
         '--crossentr-threshold', metavar='NUM', type=float, default=0.001,
         help='threshold on cross-entropy for stopping ST error model training')
+    parser.add_argument(
+        '--ngrams-file', metavar='FILE', type=str,
+        help='')
+    parser.add_argument(
+        '--weights-file', metavar='FILE', type=str,
+        help='')
+    parser.add_argument(
+        '--load-weights-from', metavar='FILE', type=str,
+        help='')
     return parser.parse_args()
 
 
@@ -171,7 +184,33 @@ def main():
 
     def _train_st_error_model(args):
         # FIXME implement
-        raise NotImplementedError()
+        # if weight file given -> load weights from there, otherwise train them
+        ngrams, probs, ngr_probs = None, None, None
+        if args.load_weights_from is not None:
+            ngrams = load_ngrams(args.ngrams_file)
+            with np.load(args.load_weights_from) as data:
+                probs, ngr_probs = data['probs'], data['ngr_probs']
+        else:
+            training_pairs = _load_training_pairs(args)
+            ngr_training_pairs, ngrams = training_pairs_to_ngrams(
+                training_pairs,
+                max_n=args.max_context, max_ngrams=args.max_ngrams)
+            if args.ngrams_file is not None:
+                save_ngrams(args.ngrams_file, ngrams)
+            probs, ngr_probs = fit(
+                ngr_training_pairs, ngrams,
+                threshold=args.crossentr_threshold)
+            if args.weights_file is not None:
+                np.savez(args.weights_file, probs=probs, ngr_probs=ngr_probs)
+
+        mappings = matrix_to_mappings(
+            probs, ngrams, weight_threshold=args.weight_threshold)
+        for input_str, output_str, weight in mappings:
+            print('\''+input_str+'\'', '\''+output_str+'\'', weight, sep='\t')
+        tr = compile_transducer(
+               mappings, ngr_probs, max_errors=args.max_errors,
+               max_context=args.max_context, weight_threshold=args.weight_threshold)
+        tr.write(args.error_model_file)
 
     args = parse_arguments()
     logging.basicConfig(level=logging.getLevelName(args.log_level))

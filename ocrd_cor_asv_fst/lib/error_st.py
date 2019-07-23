@@ -1,17 +1,13 @@
-# FIXME currently deprecated -- fix to use pynini instead of hfst
-
 '''Error model based on a stochastic transducer.'''
-# TODO literature, computing P(y|x) rather than P(x, y) etc.
 
 import argparse
 from collections import defaultdict
-import hfst
 import numpy as np
 from operator import itemgetter
+import pynini
 import tqdm
 
-import sys
-import helper
+from ..lib.helper import escape_for_pynini
 
 
 def dicts_to_value_pairs(dict_1, dict_2):
@@ -48,7 +44,7 @@ def select_ngrams(counter, num):
     # select the unigrams
     ngrams = [key for key in counter.keys() if len(key) <= 1]
     if len(ngrams) > num:
-        raise Exception('Number of unigrams exceeds the number of allowed'
+        raise Exception('Number of unigrams exceeds the number of allowed '
                         'n-grams.')
     # add the most frequent n-grams for n > 1
     ngrams.extend(map(
@@ -72,7 +68,6 @@ def string_to_ngram_ids(string, ngrams):
             ngr = string[i:i+j+1]
             if ngr in ngrams_idx:
                 result[i,j] = ngrams_idx[ngr]
-    # print(string, result)
     return result
 
 
@@ -87,6 +82,18 @@ def preprocess_training_data(ocr_dict, gt_dict, max_n=3, max_ngrams=1000):
             string_to_ngram_ids(gt_str, ngrams),
             string_to_ngram_ids(ocr_str, ngrams)))
     return training_pairs, ngrams
+
+
+def training_pairs_to_ngrams(training_pairs, max_n=3, max_ngrams=1000):
+    ocr_ngrams = count_ngrams(map(itemgetter(0), training_pairs), max_n)
+    gt_ngrams = count_ngrams(map(itemgetter(1), training_pairs), max_n)
+    ngrams = select_ngrams(merge_counters(ocr_ngrams, gt_ngrams), max_ngrams)
+    ngr_training_pairs = []
+    for (ocr_str, gt_str) in training_pairs:
+        ngr_training_pairs.append((
+            string_to_ngram_ids(gt_str, ngrams),
+            string_to_ngram_ids(ocr_str, ngrams)))
+    return ngr_training_pairs, ngrams
 
 
 def normalize_probs(probs):
@@ -140,40 +147,21 @@ def compute_expected_counts(seq_pairs, probs, ngr_probs):
         alpha = forward(input_seq, output_seq, probs, ngr_probs)
         beta = backward(input_seq, output_seq, probs, ngr_probs)
         Z = alpha[input_seq.shape[0],output_seq.shape[0]]
-        # if Z <= 0:
-        #     print('Skipping')
-        #     print(alpha)
-        #     continue
-        # if Z > 1:
-        #     raise Exception('Z > 1')
-#         print(Z)
-#         print(alpha[input_seq.shape[0],output_seq.shape[0]])
-#         print(beta[0,0])
-#         print(alpha)
-#         print(beta)
-#         print(input_seq, output_seq)
         for i in range(1, input_seq.shape[0]+1):
             for j in range(1, output_seq.shape[0]+1):
                 if alpha[i,j]*beta[i,j] == 0:
                     continue
-                # Z = alpha[i,j]*beta[i,j]
-                co = np.zeros((min(i, input_seq.shape[1]), min(j, output_seq.shape[1])))
+                co = np.zeros((min(i, input_seq.shape[1]),
+                               min(j, output_seq.shape[1])))
                 for k in range(min(i, input_seq.shape[1])):
                     for m in range(min(j, output_seq.shape[1])):
                         x, y = input_seq[i-k-1,k], output_seq[j-m-1,m]
                         if x > -1 and y > -1:
-#                             print(x, y, alpha[i-k-1,j-m-1], probs[x,y], beta[i,j], Z,
-#                                 alpha[i-k-1,j-m-1] * probs[x,y] * beta[i,j] / Z)
                             c = alpha[i-k-1,j-m-1] * ngr_probs[k] * \
                                 probs[x,y] * beta[i,j] / Z
                             co[k,m] += c
                             ngr_counts[k] += c
                             counts[x,y] += c
-                # TODO alpha[i,j]*beta[i,j] should equal to np.sum(co) everywhere (?)
-                # print(i, j, beta[i,j], Z, np.sum(co), alpha[i,j]*beta[i,j]/Z)
-                # print(i, j, beta[i,j], Z, np.sum(co))
-                # print(co)
-        # raise NotImplementedError()
     return counts, ngr_counts
 
 
@@ -195,22 +183,17 @@ def compute_new_probs(counts, probs):
 def fit(seq_pairs, ngrams, threshold=0.0001):
     probs = initialize_probs(len(ngrams))
     ngr_probs = np.ones(3) / 3
-    # ngr_probs = np.ones(3)
     kl_div = np.inf
     while kl_div > threshold:
         counts, ngr_counts = compute_expected_counts(seq_pairs, probs, ngr_probs)
         new_probs = compute_new_probs(counts, probs)
         ngr_probs = ngr_counts / np.sum(ngr_counts)
-#         new_probs = counts / np.sum(counts)
         kl_div = mean_kl_divergence(probs, new_probs)
         probs = new_probs
         if np.any(probs > 1):
             raise RuntimeError('!')
         print('KL-DIV={}'.format(kl_div))
         print(ngr_probs)
-#         mappings = matrix_to_mappings(probs, ngrams, weight_threshold=5)
-#         for (input_str, output_str, weight) in mappings:
-#             print('\'{}\' : \'{}\' :: {}'.format(input_str, output_str, np.exp(-weight)))
     print(ngr_probs)
     return probs, ngr_probs
 
@@ -225,156 +208,74 @@ def matrix_to_mappings(probs, ngrams, weight_threshold=5.0):
     return results
 
 
-def align_mappings(mappings):
-
-    def _align(x, y):
-        return tuple(zip(tuple(x) + (hfst.EPSILON,)*max(0, len(y)-len(x)),
-                         tuple(y) + (hfst.EPSILON,)*max(0, len(x)-len(y))))
-    
-    # convert tuples like ('abc', 'def', 1.3)
-    # to ((('a', 'd'), ('b', 'e'), ('c', 'f')), 3, 1.3)
-    # (the number "3" here is len(x) -- the length of the used context)
-    # insert epsilons where necessary
-    result = []
-    for x, y, weight in mappings:
-        result.append((_align(x, y), len(x), weight))
-    return result
-
-
 def compile_transducer(mappings, ngr_probs, max_errors=3, max_context=3,
                        weight_threshold=5.0):
-    '''Convert the trained probability matrix to a transducer.'''
     ngr_weights = -np.log(ngr_probs)
-    print(ngr_weights)
+    identity_trs, error_trs = {}, {}
+    identity_mappings, error_mappings = {}, {}
+    for i in range(max_context):
+        identity_trs[i], error_trs[i] = [], []
+        identity_mappings[i], error_mappings[i] = [], []
+    for x, y, weight in mappings:
+        mapping = (escape_for_pynini(x), escape_for_pynini(y), str(weight))
+        if x == y:
+            identity_mappings[len(x)-1].append(mapping)
+        else:
+            error_mappings[len(x)-1].append(mapping)
+    for i in range(max_context):
+        identity_trs[i] = pynini.string_map(identity_mappings[i])
+        error_trs[i] = pynini.string_map(error_mappings[i])
+    # TODO refactor as a subfunction
+    # - build the "master transducer" containing ID-n and ERR-n symbols
+    #   on transitions for n in 1..max_context and containing ngr_weights[n] in
+    #   arcs leading to those
+    state_dict = {}
+    root = pynini.Fst()
 
-    class AlignmentTrie:
-        def __init__(self):
-            self.children = {}
-            self.final_weight = None
-            self.is_identity = True
+    # FIXME refactor the merging of symbol tables into a separate function
+    symbol_table = pynini.SymbolTable()
+    for i in range(max_context):
+        symbol_table = pynini.merge_symbol_table(symbol_table, identity_trs[i].input_symbols())
+        symbol_table = pynini.merge_symbol_table(symbol_table, error_trs[i].input_symbols())
+        symbol_table = pynini.merge_symbol_table(symbol_table, identity_trs[i].output_symbols())
+        symbol_table = pynini.merge_symbol_table(symbol_table, error_trs[i].output_symbols())
+        sym = symbol_table.add_symbol('id-{}'.format(i+1))
+        sym = symbol_table.add_symbol('err-{}'.format(i+1))
 
-        def insert(self, alignment, weight):
-            if not alignment:
-                self.final_weight = weight
-            else:
-                x, y = alignment[0]
-                if (x, y) not in self.children:
-                    self.children[(x, y)] = AlignmentTrie()
-                    self.children[(x, y)].is_identity = \
-                        self.is_identity and x == y
-                self.children[(x, y)].insert(alignment[1:], weight)
+    root.set_input_symbols(symbol_table)
+    root.set_output_symbols(symbol_table)
 
-    def _convert_tries_to_single_error_tr(tries, only_identity=False):
+    for i in range(max_errors+1):
+        for j in range(max_context+1):
+            s = root.add_state()
+            state_dict[(i, j)] = s
+            if j > 0:
+                # (i, 0) -> (i, j) with epsilon
+                root.add_arc(
+                    state_dict[(i, 0)],
+                    pynini.Arc(0, 0, ngr_weights[j-1], s))
+                # (i, j) -> (i, 0) with identity
+                sym = root.output_symbols().find('id-{}'.format(j))
+                root.add_arc(
+                    s,
+                    pynini.Arc(0, sym, 0, state_dict[(i, 0)]))
+                if i > 0:
+                    # arc: (i-1, j) -> (i, 0) with error
+                    sym = root.output_symbols().find('err-{}'.format(j))
+                    root.add_arc(
+                        state_dict[(i-1, j)],
+                        pynini.Arc(0, sym, 0, state_dict[(i, 0)]))
+        root.set_final(state_dict[(i, 0)], 0)
 
-        def _process_node(tr_b, node, state):
-            if node.final_weight is not None:
-                if not only_identity or node.is_identity:
-                    target_state = 0 if node.is_identity else 1
-                    tr_b.add_transition(
-                        state,
-                        hfst.HfstBasicTransition(
-                            target_state,
-                            hfst.EPSILON,
-                            hfst.EPSILON,
-                            node.final_weight))
-            for (x, y), child in node.children.items():
-                target_state = tr_b.add_state()
-                # print(x, y, target_state)
-                tr_b.add_transition(
-                    state,
-                    hfst.HfstBasicTransition(target_state, x, y, 0.0))
-                _process_node(tr_b, child, target_state)
-
-        tr_b = hfst.HfstBasicTransducer()
-        tr_b.set_final_weight(0, 0.0)
-        if not only_identity:
-            tr_b.add_state()        # 1 -- ending state with one error
-            tr_b.set_final_weight(1, 0.0)
-        for i in range(max_errors):
-            state = tr_b.add_state()
-            tr_b.add_transition(
-                0,
-                hfst.HfstBasicTransition(
-                    state,
-                    hfst.EPSILON,
-                    hfst.EPSILON,
-                    ngr_weights[i]))
-            _process_node(tr_b, tries[i], state)
-        tr = hfst.HfstTransducer(tr_b)
-        print('Minimizing...')
-        # tr.minimize()
-        return tr
-
-    # states are identified by tuples: (e, n, m), where:
-    # - e -- number of errors until now
-    # - n -- the length of context chosen for next transition (or 0 if not yet
-    #        chosen)
-    # - m -- the length of the already processed context
-    tr_b = hfst.HfstBasicTransducer()
-    alignment_tries = [AlignmentTrie() for i in range(max_context)]
-    aligned_mappings = align_mappings(mappings)
-    # add flags -- FIXME this is a quick-and-dirty solution!!!
-    aligned_mappings.extend(
-        [((('@N.{}@'.format(chr(c)), '@N.{}@'.format(chr(c))),), 1, 0.0) \
-         for c in range(ord('A'), ord('Z')+1)])
-    for alignment, context_len, weight in aligned_mappings:
-        if context_len <= max_context:
-            alignment_tries[context_len-1].insert(alignment, weight)
-    tr = hfst.epsilon_fst()
-    for i in range(max_errors):
-        tr.concatenate(_convert_tries_to_single_error_tr(alignment_tries))
-    tr.concatenate(_convert_tries_to_single_error_tr(alignment_tries, only_identity=True))
-    # TODO multiple errors
-    # raise NotImplementedError()
-    # tr.remove_epsilons()
-    # tr.push_weights_to_start()
-    tr.invert()
-    return tr
-
-
-def compile_error_transducer(ocr_dict, gt_dict, max_context=3, max_errors=3):
-    raise NotImplementedError()
-
-
-def parse_arguments():
-    parser = argparse.ArgumentParser(
-        description='OCR post-correction ocrd-cor-asv-fst ST error model '
-                    'creator')
-    parser.add_argument(
-        'directory', metavar='PATH',
-        help='directory (or CSV file) for input and GT files')
-    parser.add_argument(
-        '-I', '--input-suffix', metavar='SUF', type=str, default='txt',
-        help='input (OCR) filenames suffix')
-    parser.add_argument(
-        '-G', '--gt-suffix', metavar='SUF', type=str, default='gt.txt',
-        help='clean (Ground Truth) filenames suffix')
-    parser.add_argument(
-        '-C', '--max-context', metavar='NUM', type=int, default=3,
-        help='maximum size of context count edits at')
-    parser.add_argument(
-        '-E', '--max-errors', metavar='NUM', type=int, default=3,
-        help='maximum number of errors the resulting FST can correct '
-             '(applicable within one window, i.e. a certain number of words)')
-    parser.add_argument(
-        '-o', '--output-file', metavar='FILE', type=str,
-        default='error.fst', help='file to store the resulting transducer')
-    parser.add_argument(
-        '-w', '--weights-file', metavar='FILE', type=str,
-        help='file to store the trained weights')
-    parser.add_argument(
-        '-W', '--load-weights-from', metavar='FILE', type=str,
-        help='load weights from FILE instead of training')
-    parser.add_argument(
-        '-n', '--max-ngrams', metavar='NUM', type=str, default=1000,
-        help='maximum number of n-grams')
-    parser.add_argument(
-        '-N', '--ngrams-file', metavar='FILE', type=str, default='ngrams.txt',
-        help='file to save/load n-grams to/from')
-    parser.add_argument(
-        '-t', '--weight-threshold', metavar='VAL', type=float, default=5.0,
-        help='discard transitions with weight higher than VAL')
-    return parser.parse_args()
+    root.set_start(state_dict[(0, 0)])
+    replacements = []
+    for i in range(max_context):
+        replacements.append(('id-{}'.format(i+1), identity_trs[i]))
+        replacements.append(('err-{}'.format(i+1), error_trs[i]))
+    result = pynini.replace(root, replacements)
+    result.invert()
+    result.optimize()
+    return result
 
 
 def load_ngrams(filename):
@@ -389,40 +290,4 @@ def save_ngrams(filename, ngrams):
     with open(filename, 'w+') as fp:
         for ngr in ngrams:
             fp.write(ngr + '\n')
-
-
-def main():
-    args = parse_arguments()
-
-    # if weight file given -> load weights from there, otherwise train them
-    ngrams, probs, ngr_probs = None, None, None
-    if args.load_weights_from is not None:
-        ngrams = load_ngrams(args.ngrams_file)
-        with np.load(args.load_weights_from) as data:
-            probs, ngr_probs = data['probs'], data['ngr_probs']
-    else:
-        ocr_dict = helper.create_dict(args.directory, args.input_suffix)
-        gt_dict = helper.create_dict(args.directory, args.gt_suffix)
-        training_pairs, ngrams = preprocess_training_data(
-            ocr_dict, gt_dict,
-            max_n=args.max_context, max_ngrams=1000)
-        save_ngrams(args.ngrams_file, ngrams)
-        probs, ngr_probs = fit(training_pairs, ngrams, threshold=0.001)
-        if args.weights_file is not None:
-            np.savez(args.weights_file, probs=probs, ngr_probs=ngr_probs)
-
-    mappings = matrix_to_mappings(
-        probs, ngrams, weight_threshold=args.weight_threshold)
-    for input_str, output_str, weight in mappings:
-        print('\''+input_str+'\'', '\''+output_str+'\'', weight, sep='\t')
-    # for alignment, context_len, weight in align_mappings(mappings):
-    #     print(alignment, context_len, weight)
-    tr = compile_transducer(
-        mappings, ngr_probs, max_errors=args.max_errors,
-        max_context=args.max_context, weight_threshold=args.weight_threshold)
-    tr.write_to_file(args.output_file)
-
-
-if __name__ == '__main__':
-    main()
 
