@@ -1,0 +1,3 @@
+[submodule "cor-asv-fst-models"]
+	path = models
+	url = ../cor-asv-fst-models
