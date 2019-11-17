@@ -36,7 +36,7 @@ def create_window(tokens):
 
 
 def process_window(input_str, window_fst, model,
-                   beam_width=5, rejection_weight=1.5):
+                   pruning_weight=5, rejection_weight=1.5):
     '''
     Compose a window input automaton with the model.
     '''
@@ -47,7 +47,7 @@ def process_window(input_str, window_fst, model,
     for fst in model:
         window_fst = pynini.compose(window_fst, fst)
         window_fst.project(project_output=True)
-        window_fst.prune(weight=beam_width)
+        window_fst.prune(weight=pruning_weight)
         window_fst.optimize()
     t3 = time.time()
     logging.debug('- composition: {}s'.format(t3-t1))
@@ -207,7 +207,7 @@ class FSTLatticeGenerator:
                          if error_model_file \
                          else None
         self.rejection_weight = kwargs['rejection_weight']
-        self.beam_width = kwargs['beam_width']
+        self.pruning_weight = kwargs['pruning_weight']
         self.max_window_size = 2                 # TODO expose as a parameter
         self.lattice_format = lattice_format
 
@@ -224,7 +224,7 @@ class FSTLatticeGenerator:
                 ' '.join(tokens[i:i+j]),
                 windows[(i,j)],
                 (self.error_fst, self.window_fst),
-                beam_width=self.beam_width,
+                pruning_weight=self.pruning_weight,
                 rejection_weight=self.rejection_weight)
             _print_paths(windows[(i,j)].paths())
 

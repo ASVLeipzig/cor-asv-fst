@@ -78,7 +78,7 @@ class FSTCorrection(Processor):
             lattice_format   = 'networkx',
             words_per_window = self.parameter['words_per_window'],
             rejection_weight = self.parameter['rejection_weight'],
-            beam_width       = self.parameter['beam_width'])
+            pruning_weight   = self.parameter['pruning_weight'])
 
         # initialize the language model
         self.rater = Rater(logger=LOG)
@@ -128,7 +128,7 @@ class FSTCorrection(Processor):
                 start_traceback = prev_traceback,
                 context = context,
                 lm_weight = self.parameter['lm_weight'],
-                beam_width = self.parameter['lm_beam_width'],
+                beam_width = self.parameter['beam_width'],
                 beam_clustering_dist = \
                     BEAM_CLUSTERING_DIST if BEAM_CLUSTERING_ENABLE else 0)
 
@@ -179,9 +179,13 @@ class FSTCorrection(Processor):
         return result
 
     def _line_to_windows(self, n_line):
-        # TODO currently: gets the text from the Word elements and returns
-        # lines as lists of words;
-        # needed: also get glyph alternatives
+        # currently: creates a lattice of (multi-word-) tokens/windows,
+        # each as a tuple of (merged) Word object, input string FST, and
+        # input string list;
+        # todo: read graph directly from OCR's CTC decoder, 'splitting' sub-graphs at whitespace candidates
+        # FIXME: also get glyph alternatives (textequiv_level=glyph)
+        # FIXME: also import confidence
+        # FIXME: split the line(s) into words (textequiv_level=line)
         # FIXME code duplication! this should be done by FSTLatticeGenerator
         n_words = n_line.get_Word()
         tokens = self._line_to_tokens(n_line)
@@ -216,9 +220,10 @@ class FSTCorrection(Processor):
     def _process_windows(self, windows):
         for (i, j), (ref, fst, tokens) in windows.items():
             LOG.debug('Processing window ({}, {})'.format(i, j))
+            # FIXME: this NEEDS multiprocessing (as before 81dd2c0c)!
             fst = process_window(
                 ' '.join(tokens), fst, (self.latticegen.error_fst, self.latticegen.window_fst),
-                beam_width=self.parameter['beam_width'],
+                pruning_weight=self.parameter['pruning_weight'],
                 rejection_weight=self.parameter['rejection_weight'])
             windows[(i, j)] = (ref, fst, tokens)
 
@@ -229,6 +234,7 @@ class FSTCorrection(Processor):
         for (i, j), (ref, fst, tokens) in windows.items():
             start_node = i
             end_node = i + j
+            # FIXME: this will NOT work without spaces and newlines (as before 81dd2c0c)!
             paths = [(output_str, float(weight)) \
                      for input_str, output_str, weight in \
                          fst.paths().items()]

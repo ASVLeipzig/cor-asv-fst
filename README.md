@@ -120,12 +120,12 @@ Additionally, the parameter `-M` can be used to select the evaluation measure
 (`Levenshtein` by default). The files should be in the same two-column format
 as described above.
 
-### [OCR-D processor](https://github.com/OCR-D/core) interface `ocrd-cor-asv-fst-process`
+### [OCR-D processor](https://ocr-d.github.io/cli) interface `ocrd-cor-asv-fst-process`
 
-To be used with [PageXML](https://www.primaresearch.org/tools/PAGELibraries)
-documents in an [OCR-D](https://github.com/OCR-D/spec/) annotation workflow.
-Input could be anything with a textual annotation (`TextEquiv` on the given
-`textequiv_level`).
+To be used with [PageXML](https://github.com/PRImA-Research-Lab/PAGE-XML)
+documents in an [OCR-D](https://ocr-d.github.io) annotation workflow.
+Input files need a textual annotation (`TextEquiv`) on the given
+`textequiv_level` (currently _only_ `word`!).
 
 ...
 
@@ -151,13 +151,11 @@ Input could be anything with a textual annotation (`TextEquiv` on the given
         "OCR-D-COR-ASV"
       ],
       "parameters": {
-        "keraslm_file": {
+        "textequiv_level": {
           "type": "string",
-          "format": "uri",
-          "content-type": "application/x-hdf;subtype=bag",
-          "description": "path of h5py weight/config file for language model trained with keraslm",
-          "required": true,
-          "cacheable": true
+          "enum": ["word"],
+          "default": "word",
+          "description": "PAGE XML hierarchy level to read TextEquiv input on (output will always be word level)"
         },
         "errorfst_file": {
           "type": "string",
@@ -175,11 +173,25 @@ Input could be anything with a textual annotation (`TextEquiv` on the given
           "required": true,
           "cacheable": true
         },
-        "textequiv_level": {
+        "pruning_weight": {
+          "type": "number",
+          "format": "float",
+          "description": "transition weight for pruning the hypotheses in each word window FST",
+          "default": 5.0
+        },
+        "rejection_weight": {
+          "type": "number",
+          "format": "float",
+          "description": "transition weight (per character) for unchanged input in each word window FST",
+          "default": 1.5
+        },
+        "keraslm_file": {
           "type": "string",
-          "enum": ["word", "glyph"],
-          "default": "glyph",
-          "description": "PAGE XML hierarchy level to read TextEquiv input on (output will always be word level)"
+          "format": "uri",
+          "content-type": "application/x-hdf;subtype=bag",
+          "description": "path of h5py weight/config file for language model trained with keraslm",
+          "required": true,
+          "cacheable": true
         },
         "beam_width": {
           "type": "number",

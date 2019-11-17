@@ -102,11 +102,11 @@ def parse_arguments():
         '-W', '--words-per-window', metavar='NUM', type=int, default=3,
         help='maximum number of words in one window')
     parser.add_argument(
-        '-B', '--beam-width', metavar='WEIGHT', type=float, default=5,
-        help='beam width for pruning the hypotheses space')
+        '-P', '--pruning-weight', metavar='WEIGHT', type=float, default=5,
+        help='transition weight for pruning the hypotheses space')
     parser.add_argument(
         '-J', '--rejection-weight', metavar='WEIGHT', type=float, default=1.5,
-        help='transition weight for unchanged input window')
+        help='transition weight (per character) for unchanged input window')
     parser.add_argument(
         '-Q', '--processes', metavar='NUM', type=int, default=1,
         help='number of processes to use in parallel')
@@ -151,7 +151,7 @@ def main():
         lattice_format   = 'networkx' if using_lm else 'fst',
         words_per_window = args.words_per_window,
         rejection_weight = args.rejection_weight,
-        beam_width       = args.beam_width)
+        pruning_weight   = args.pruning_weight)
     lm = None
     if using_lm:
         lm = Rater(logger=logging)

@@ -22,13 +22,11 @@
         "OCR-D-COR-ASV"
       ],
       "parameters": {
-        "keraslm_file": {
+        "textequiv_level": {
           "type": "string",
-          "format": "uri",
-          "content-type": "application/x-hdf;subtype=bag",
-          "description": "path of h5py weight/config file for language model trained with keraslm",
-          "required": true,
-          "cacheable": true
+          "enum": ["word"],
+          "default": "word",
+          "description": "PAGE XML hierarchy level to read TextEquiv input on (output will always be word level)"
         },
         "errorfst_file": {
           "type": "string",
@@ -46,11 +44,25 @@
           "required": true,
           "cacheable": true
         },
-        "textequiv_level": {
+        "pruning_weight": {
+          "type": "number",
+          "format": "float",
+          "description": "transition weight for pruning the hypotheses in each word window FST",
+          "default": 5.0
+        },
+        "rejection_weight": {
+          "type": "number",
+          "format": "float",
+          "description": "transition weight (per character) for unchanged input in each word window FST",
+          "default": 1.5
+        },
+        "keraslm_file": {
           "type": "string",
-          "enum": ["word", "glyph"],
-          "default": "glyph",
-          "description": "PAGE XML hierarchy level to read TextEquiv input on (output will always be word level)"
+          "format": "uri",
+          "content-type": "application/x-hdf;subtype=bag",
+          "description": "path of h5py weight/config file for language model trained with keraslm",
+          "required": true,
+          "cacheable": true
         },
         "beam_width": {
           "type": "number",
