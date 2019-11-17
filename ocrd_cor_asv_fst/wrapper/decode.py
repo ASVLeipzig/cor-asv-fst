@@ -4,16 +4,19 @@ import os.path
 
 from ocrd import Processor
 from ocrd_utils import concat_padded, getLogger, MIMETYPE_PAGE
-from ocrd_models.ocrd_page import \
-    MetadataItemType, LabelType, LabelsType, TextEquivType, WordType, parse, \
+from ocrd_modelfactory import page_from_file
+from ocrd_models.ocrd_page import (
+    MetadataItemType, LabelType, LabelsType,
+    TextEquivType, WordType, 
     to_xml
+)
 from ocrd_keraslm.lib import Rater
 
 from .config import OCRD_TOOL
 from ..lib.latticegen import create_window, FSTLatticeGenerator, process_window
 
 
-LOG = getLogger('processor.PageXMLProcessor')
+LOG = getLogger('processor.FSTCorrection')
 
 # enable pruning partial paths by history clustering
 BEAM_CLUSTERING_ENABLE = True
@@ -22,18 +25,50 @@ BEAM_CLUSTERING_ENABLE = True
 BEAM_CLUSTERING_DIST = 5
 
 
-class PageXMLProcessor(Processor):
-    '''
-    Class responsible for processing the input data in PageXML format
-    within the OCR-D workflow.
+class FSTCorrection(Processor):
+    '''Perform OCR post-correction with error/lexicon FST and character-level LSTM LM.
+    
+    Open and deserialise PAGE input files, then iterate over the element hierarchy
+    down to the requested `textequiv_level`, creating a lattice of Word elements
+    with different spans (from 1 input token up to N successors) for each line.
+    
+    (When merging input tokens, concatenate their string values (TextEquiv) with spaces,
+    and combine their coordinates and other attributes as precise as possible.
+    Where the output contains spaces, introduced by the correction model, do not
+    attempt to split, but keep the original Word.)
+    
+    Each lattice element (multi-token Word) now represents a _window_ of input string
+    hypotheses which can be FST-processed efficiently, producing a number of output string
+    hypotheses from its local n-best paths. These strings are written to the elements'
+    TextEquivs.
+    
+    The lattice is then passed to language model rescoring and best path search:
+    The LM decoder combines alternatives from all elements into sequences which
+    can be fed into the LM rater, but not exhaustively (which is infeasible) but
+    in a A* depth-first beam search. It does so by iteratively adding new input
+    characters from the lattice to existing LM state representations of a priority
+    queue (beam) of best-scoring character sequences (i.e. histories / lattice paths)
+    up to that point.
+    
+    For each line, the LM decoder outputs the beam at the end of the input lattice,
+    which will be passed in with the next line, and it outputs the decision on
+    the best-scoring path up to the end of the previous line. (This way, the context
+    on the next line is used to re-rank the beam of the current.) This path
+    is used to concatenate the Word elements to be annotated for the line.
+    
+    Finally, make the levels above `textequiv_level` consistent with that
+    textual result (by concatenation joined by whitespace).
+    
+    Produce new output files by serialising the resulting hierarchy.
     '''
     
     def __init__(self, *args, **kwargs):
         kwargs['ocrd_tool'] = OCRD_TOOL['tools']['ocrd-cor-asv-fst-process']
         kwargs['version'] = OCRD_TOOL['version']
-        super(PageXMLProcessor, self).__init__(*args, **kwargs)
-        if not hasattr(self, 'workspace') or not self.workspace:
-            raise RuntimeError('no workspace specified!')
+        super(FSTCorrection, self).__init__(*args, **kwargs)
+        if not hasattr(self, 'parameter'):
+            # instantiated in non-processing context (e.g. -J/-h)
+            return
 
         # initialize the decoder
         LOG.info("Loading the correction models")
@@ -57,8 +92,7 @@ class PageXMLProcessor(Processor):
     def process(self):
         for (n, input_file) in enumerate(self.input_files):
             LOG.info("INPUT FILE %i / %s", n, input_file)
-            local_input_file = self.workspace.download_file(input_file)
-            pcgts = parse(local_input_file.url, silence=True)
+            pcgts = page_from_file(self.workspace.download_file(input_file))
             LOG.info("Scoring text in page '%s' at the %s level",
                      pcgts.get_pcGtsId(), self.parameter['textequiv_level'])
             self._process_page(pcgts)
@@ -124,10 +158,12 @@ class PageXMLProcessor(Processor):
                 name=OCRD_TOOL['tools']['ocrd-cor-asv-fst-process']['steps'][0],
                 value='ocrd-cor-asv-fst-process',
                 Labels=[
-                    LabelsType(externalRef='parameters',
-                               Label=[LabelType(type_=name,
-                                                value=self.parameter[name])
-                                      for name in self.parameter.keys()])]))
+                    LabelsType(
+                        externalModel='ocrd-tool',
+                        externalId='parameters',
+                        Label=[LabelType(type_=name,
+                                         value=self.parameter[name])
+                               for name in self.parameter.keys()])]))
 
     def _line_to_tokens(self, n_line):
         result = []
