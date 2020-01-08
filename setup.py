@@ -21,6 +21,7 @@ setup(
     description='OCR post-correction with error/lexicon Finite State '
                 'Transducers and character-level LSTMs',
     long_description=README,
+    long_description_content_type='text/markdown',
     author='Maciej Sumalvico, Robert Sachunsky',
     author_email='sumalvico@informatik.uni-leipzig.de, '
                  'sachunsky@informatik.uni-leipzig.de',
