@@ -23,7 +23,7 @@ def get_confusion_dicts(gt_dict, raw_dict, max_n):
     Take two dictionaries, mapping: id -> line for GT and OCR, 
     and align corresponding lines. 
     If they are different, split into n-grams for n={1,2,3},
-    and count n-gram occurances.
+    and count n-gram occurrences.
     Return these counts as a list of dicts:
     [ignored, 1-grams, 2-grams, 3-grams]
     """
