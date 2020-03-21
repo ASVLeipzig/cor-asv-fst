@@ -67,7 +67,7 @@ def setup_spacy(use_gpu=False):
 def build_lexicon(lines, _dict = None):
     '''
     Create lexicon with frequencies from lines of plain text. Words and
-    punctation marks are inserted into separate dicts.
+    punctuation marks are inserted into separate dicts.
 
     The additional parameter `_dict` is a dictionary: type -> frequency.
     If it is given, those types are additionally inserted into the

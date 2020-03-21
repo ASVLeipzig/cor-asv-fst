@@ -264,11 +264,11 @@ def main():
                            ' -i or -I and the data directory.')
     if args.output_file is None and \
             (args.output_suffix is None or args.directory is None):
-        raise RuntimeError('No output file speficied! You have to specify '
+        raise RuntimeError('No output file specified! You have to specify '
                            'either -o or -O and the data directory.')
     if args.gt_file is None and \
             (args.gt_suffix is None or args.directory is None):
-        raise RuntimeError('No ground truth file speficied! You have to '
+        raise RuntimeError('No ground truth file specified! You have to '
                            'specify either -g or -G and the data directory.')
     
     # read the test data
