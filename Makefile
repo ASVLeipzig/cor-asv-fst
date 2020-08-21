@@ -1,4 +1,3 @@
-# BEGIN-EVAL makefile-parser --make-help Makefile
 
 # Directory to install to ('$(PREFIX)')
 PREFIX ?= $(if $(VIRTUAL_ENV),$(VIRTUAL_ENV),$(CURDIR)/.local)
@@ -7,16 +6,19 @@ SHELL = /bin/bash
 PYTHON = python
 PIP = pip
 
+# BEGIN-EVAL makefile-parser --make-help Makefile
+
 help:
 	@echo ""
 	@echo "  Targets"
 	@echo ""
-	@echo "    deps-ubuntu  (install required system packages)"
-	@echo "    deps         (install required Python packages)"
-	#@echo "    deps-test  pip install -r requirements_test.txt"
+	@echo "    deps-ubuntu  Dependencies for deployment in an ubuntu/debian linux"
+	@echo "                 we need libstdc++ > 5.0 (for codecvt, std::make_unique etc)"
+	@echo "                 since pynini 2.0.9, we need libfst-dev > 1.7"
 	@echo ""
-	@echo "    install    (install this Python package)"
-	#@echo "    test       python -m pytest test"
+	@echo "  Variables"
+	@echo ""
+	@echo "    PREFIX  Directory to install to ('$(PREFIX)')"
 
 # END-EVAL
 
@@ -43,8 +45,13 @@ $(PREFIX)/lib/libfst.so.17: openfst-1.7.5.tar.gz
 openfst-1.7.5.tar.gz:
 	wget -nv http://www.openfst.org/twiki/pub/FST/FstDownload/openfst-1.7.5.tar.gz
 
+# pip install . (incl. deps)
 install: deps
 	$(PIP) install .
+
+# Run unit tests
+test:
+	$(PYTHON) -m pytest --continue-on-collection-errors tests
 
 #test: test/assets
 #	test -f model_dta_test.h5 || keraslm-rate train -m model_dta_test.h5 test/assets/*.txt
