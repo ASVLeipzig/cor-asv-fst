@@ -3,7 +3,12 @@ import networkx as nx
 import os.path
 
 from ocrd import Processor
-from ocrd_utils import concat_padded, getLogger, MIMETYPE_PAGE
+from ocrd_utils import (
+    make_file_id,
+    assert_file_grp_cardinality,
+    getLogger,
+    MIMETYPE_PAGE
+)
 from ocrd_modelfactory import page_from_file
 from ocrd_models.ocrd_page import (
     MetadataItemType, LabelType, LabelsType,
@@ -90,6 +95,9 @@ class FSTCorrection(Processor):
         self.rater.load_weights(self.parameter['keraslm_file'])
 
     def process(self):
+        assert_file_grp_cardinality(self.input_file_grp, 1)
+        assert_file_grp_cardinality(self.output_file_grp, 1)
+
         for (n, input_file) in enumerate(self.input_files):
             LOG.info("INPUT FILE %i / %s", n, input_file)
             pcgts = page_from_file(self.workspace.download_file(input_file))
@@ -98,10 +106,11 @@ class FSTCorrection(Processor):
             self._process_page(pcgts)
 
             # write back result
-            file_id = concat_padded(self.output_file_grp, n)
+            file_id = make_file_id(input_file, self.output_file_grp)
             self.workspace.add_file(
                 ID=file_id,
                 file_grp=self.output_file_grp,
+                # TODO extension
                 local_filename=os.path.join(self.output_file_grp, file_id),
                 mimetype=MIMETYPE_PAGE,
                 content=to_xml(pcgts),
