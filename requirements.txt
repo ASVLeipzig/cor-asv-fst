@@ -5,5 +5,5 @@ editdistance
 spacy
 pynini @ git+ssh://git@github.com/kylebgorman/pynini.git#egg=pynini
 networkx >= 2.0
-ocrd >= 2.0.0
-ocrd_keraslm >= 0.3.1
+ocrd >= 2.14.0
+ocrd_keraslm >= 0.4.0
