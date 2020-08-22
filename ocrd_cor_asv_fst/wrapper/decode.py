@@ -110,14 +110,14 @@ class FSTCorrection(Processor):
             self.workspace.add_file(
                 ID=file_id,
                 file_grp=self.output_file_grp,
-                # TODO extension
-                local_filename=os.path.join(self.output_file_grp, file_id),
+                pageId=input_file.pageId,
+                local_filename=os.path.join(self.output_file_grp, file_id + '.xml'),
                 mimetype=MIMETYPE_PAGE,
                 content=to_xml(pcgts),
             )
 
     def _process_page(self, pcgts):
-        self._add_my_metadata_to_page(pcgts)
+        self.add_metadata(pcgts)
         prev_traceback = None   # TODO: pass from previous page
         prev_line = None        # TODO: pass from previous page
         for n_line in _page_get_lines(pcgts):
@@ -158,21 +158,6 @@ class FSTCorrection(Processor):
 
         # ensure parent textequivs are up to date:
         page_update_higher_textequiv_levels('word', pcgts)
-
-    def _add_my_metadata_to_page(self, pcgts):
-        metadata = pcgts.get_Metadata()
-        metadata.add_MetadataItem(
-            MetadataItemType(
-                type_='processingStep',
-                name=OCRD_TOOL['tools']['ocrd-cor-asv-fst-process']['steps'][0],
-                value='ocrd-cor-asv-fst-process',
-                Labels=[
-                    LabelsType(
-                        externalModel='ocrd-tool',
-                        externalId='parameters',
-                        Label=[LabelType(type_=name,
-                                         value=self.parameter[name])
-                               for name in self.parameter.keys()])]))
 
     def _line_to_tokens(self, n_line):
         result = []
@@ -275,7 +260,7 @@ class FSTCorrection(Processor):
 
 def _page_get_lines(pcgts):
     lines = []
-    n_regions = pcgts.get_Page().get_TextRegion()
+    n_regions = pcgts.get_Page().get_AllRegions(classes=['Text'], order='reading-order')
     if not n_regions:
         LOG.warning('Page contains no text regions')
     for n_region in n_regions:
