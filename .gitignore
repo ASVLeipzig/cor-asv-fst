@@ -7,3 +7,4 @@ ocrd_cor_asv_fst/lib/extensions/*.so
 *.egg-info
 __pycache__
 .*.swp
+openfst-*
