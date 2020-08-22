@@ -9,15 +9,19 @@ Installs:
 import codecs
 
 from setuptools import setup, find_packages
+import json
 
 install_requires = open('requirements.txt').read().split('\n')
 
 with codecs.open('README.md', encoding='utf-8') as f:
     README = f.read()
 
+with open('./ocrd-tool.json', 'r') as f:
+    version = json.load(f)['version']
+
 setup(
     name='ocrd_cor_asv_fst',
-    version='0.2.0',
+    version=version,
     description='OCR post-correction with error/lexicon Finite State '
                 'Transducers and character-level LSTMs',
     long_description=README,

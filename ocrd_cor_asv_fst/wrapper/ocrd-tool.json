@@ -1,6 +1,6 @@
 {
   "git_url": "https://github.com/ASVLeipzig/cor-asv-fst",
-  "version": "0.1.1",
+  "version": "0.2.1",
   "tools": {
     "ocrd-cor-asv-fst-process": {
       "executable": "ocrd-cor-asv-fst-process",
