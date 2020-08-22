@@ -52,6 +52,7 @@ install: deps
 # Run unit tests
 test:
 	$(PYTHON) -m pytest --continue-on-collection-errors tests
+	$(warning This test only covers basic pynini functions. There are no smoke/regressions tests for cor-asv-fst, yet!)
 
 #test: test/assets
 #	test -f model_dta_test.h5 || keraslm-rate train -m model_dta_test.h5 test/assets/*.txt
