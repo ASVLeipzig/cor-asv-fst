@@ -20,9 +20,6 @@ from ocrd_keraslm.lib import Rater
 from .config import OCRD_TOOL
 from ..lib.latticegen import create_window, FSTLatticeGenerator, process_window
 
-
-LOG = getLogger('processor.FSTCorrection')
-
 # enable pruning partial paths by history clustering
 BEAM_CLUSTERING_ENABLE = True
 
@@ -75,6 +72,7 @@ class FSTCorrection(Processor):
             # instantiated in non-processing context (e.g. -J/-h)
             return
 
+        LOG = getLogger('processor.FSTCorrection')
         # initialize the decoder
         LOG.info("Loading the correction models")
         self.latticegen = FSTLatticeGenerator(
@@ -98,6 +96,7 @@ class FSTCorrection(Processor):
         assert_file_grp_cardinality(self.input_file_grp, 1)
         assert_file_grp_cardinality(self.output_file_grp, 1)
 
+        LOG = getLogger('processor.FSTCorrection')
         for (n, input_file) in enumerate(self.input_files):
             LOG.info("INPUT FILE %i / %s", n, input_file)
             pcgts = page_from_file(self.workspace.download_file(input_file))
@@ -160,6 +159,7 @@ class FSTCorrection(Processor):
         page_update_higher_textequiv_levels('word', pcgts)
 
     def _line_to_tokens(self, n_line):
+        LOG = getLogger('processor.FSTCorrection')
         result = []
         n_words = n_line.get_Word()
         if not n_words:
@@ -181,6 +181,7 @@ class FSTCorrection(Processor):
         # FIXME: also import confidence
         # FIXME: split the line(s) into words (textequiv_level=line)
         # FIXME code duplication! this should be done by FSTLatticeGenerator
+        LOG = getLogger('processor.FSTCorrection')
         n_words = n_line.get_Word()
         tokens = self._line_to_tokens(n_line)
         return { (i, j) : (self._merge_word_nodes(n_words[i:i+j]),
@@ -191,6 +192,7 @@ class FSTCorrection(Processor):
                                        len(tokens)-i+1)) }
 
     def _merge_word_nodes(self, nodes):
+        LOG = getLogger('processor.FSTCorrection')
         if not nodes:
             LOG.error('nothing to merge')
             return None
@@ -212,6 +214,7 @@ class FSTCorrection(Processor):
         return merged
 
     def _process_windows(self, windows):
+        LOG = getLogger('processor.FSTCorrection')
         for (i, j), (ref, fst, tokens) in windows.items():
             LOG.debug('Processing window ({}, {})'.format(i, j))
             # FIXME: this NEEDS multiprocessing (as before 81dd2c0c)!
@@ -222,6 +225,7 @@ class FSTCorrection(Processor):
             windows[(i, j)] = (ref, fst, tokens)
 
     def _combine_windows_to_line_graph(self, windows):
+        LOG = getLogger('processor.FSTCorrection')
         graph = nx.DiGraph()
         line_end_node = max(i+j for i, j in windows)
         graph.add_nodes_from(range(line_end_node + 1))
@@ -259,6 +263,7 @@ class FSTCorrection(Processor):
 
 
 def _page_get_lines(pcgts):
+    LOG = getLogger('processor.FSTCorrection')
     lines = []
     n_regions = pcgts.get_Page().get_AllRegions(classes=['Text'], order='reading-order')
     if not n_regions:
@@ -312,6 +317,7 @@ def page_update_higher_textequiv_levels(level, pcgts):
 
 
 def _line_update_from_path(line, path, entropy):
+    LOG = getLogger('processor.FSTCorrection')
     line.set_Word([])
     strlen = 0
     for word, textequiv, score in path:
