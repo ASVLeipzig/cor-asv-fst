@@ -141,7 +141,7 @@ def main():
                            ' -i or -I and the data directory.')
     if args.output_file is None and \
             (args.output_suffix is None or args.directory is None):
-        raise RuntimeError('No output file speficied! You have to specify '
+        raise RuntimeError('No output file specified! You have to specify '
                            'either -o or -O and the data directory.')
 
     using_lm = (args.language_model_file is not None)
